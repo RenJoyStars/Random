@@ -4,7 +4,7 @@
 
 - **工程**：`Random.xcodeproj`（Xcode 打开，⌘R 运行）
 - **应用**：`/Applications/Random.app`
-- **标识**：`cn.renqiaoyi.random` · 3.2 (34) · 最低 macOS 14.0
+- **标识**：`cn.renqiaoyi.random` · 3.4 (36) · 最低 macOS 14.0
 - **名单**：外部 `.randomroster` 文件（双击 / 拖进窗口 / 设置页导入），详见「〇、名单导入」
 - **纯单机**：数据只存本机，不联网、不传服务器
 - **ad-hoc 已签名**（自用无碍，见「十二、签名与日常使用」）· 音效可选 · 无内购
