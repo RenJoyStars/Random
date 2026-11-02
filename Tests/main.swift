@@ -775,14 +775,29 @@ if let data = dupNoJSON.data(using: .utf8) {
 }
 check(dupNoThrew, "重复学号应当导入失败并说明原因")
 
+// 学校学号常有空号（转学、插班留下），不能强制连续
 let gapNoJSON = """
-{"classes":[{"id":"2401","students":[{"name":"甲","no":1},{"name":"乙","no":3}]}]}
+{"classes":[{"id":"2401","students":[{"name":"甲","no":240101},{"name":"乙","no":240165}]}]}
 """
-var gapNoThrew = false
-if let data = gapNoJSON.data(using: .utf8) {
-    do { _ = try RosterFormat.parse(data) } catch { gapNoThrew = true }
+if let data = gapNoJSON.data(using: .utf8), let fmt = try? RosterFormat.parse(data) {
+    let cls = fmt.toSchoolClasses().first
+    check(cls?.numbers == [1, 65],
+          "学号有空号时保留原始序号（实际 \(String(describing: cls?.numbers))）")
+} else {
+    check(false, "带空号的学号名单应当能正常导入")
 }
-check(gapNoThrew, "学号跳号应当导入失败（内部按下标表示学号，缺号会错位）")
+
+// 显示口径：界面显示学校学号，而不是「第几个位置」
+let seatModel = AppModel(
+    autoloadImported: false,
+    seedRoster: [ClassRoster.SchoolClass(id: "2401", names: ["甲", "乙"], numbers: [1, 65])],
+    seedName: nil,
+    rosterStore: tempRosterURL()
+)
+seatModel.classID = "2401"
+check(seatModel.fmtNo(2) == "65",
+      "第二个位置显示为 65 号（实际 \(seatModel.fmtNo(2))）")
+check(seatModel.name(no: 2) == "乙", "位置 2 仍取到乙（内部下标不变）")
 
 let plainJSON = """
 {"classes":[{"id":"2401","students":["甲","乙"]}]}

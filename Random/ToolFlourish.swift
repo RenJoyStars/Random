@@ -752,7 +752,7 @@ struct SequenceStage: View {
     private func name(at i: Int) -> String {
         guard i < model.sequenceResult.count else { return "　" }
         let no = model.sequenceResult[i]
-        return model.name(no: no) ?? "\(no) 号"
+        return model.name(no: no) ?? "\(model.fmtNo(no)) 号"
     }
 
     var body: some View {

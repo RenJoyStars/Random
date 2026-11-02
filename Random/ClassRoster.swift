@@ -61,10 +61,23 @@ enum ClassRoster {
 
     struct SchoolClass: Identifiable, Hashable {
         let id: String          // "2601"
-        let names: [String]     // 下标 0 → 1 号
+        let names: [String]     // 下标 0 → 第 1 个位置
+        /// 与 names 平行：第 i 个位置对应的**学校学号（班内序号）**。
+        ///
+        /// 为什么需要它：学校花名册的学号并不总是 1…人数 的连续编号。
+        /// 例如 2401 实到 52 人，但班内序号最大到 65 —— 中间有转学、插班留下的空号。
+        /// 如果只用「下标 + 1」当学号，插班生就会从 65 号显示成 52 号。
+        /// nil 表示名单没写学号，此时按「下标 + 1」补。
+        var numbers: [Int]? = nil
         var titleOverride: String? = nil   // 外部名单可自定义显示名
 
         var count: Int { names.count }
+
+        /// 第 i 个位置（0 起）对应的学号。没带学号时退回 i+1。
+        func number(at i: Int) -> Int {
+            guard let ns = numbers, i >= 0, i < ns.count else { return i + 1 }
+            return ns[i]
+        }
 
         var title: String {
             if let t = titleOverride, !t.trimmingCharacters(in: .whitespaces).isEmpty {

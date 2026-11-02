@@ -743,7 +743,7 @@ struct SequenceView: View {
                                         .font(.system(size: 11, weight: .semibold).monospacedDigit())
                                         .foregroundStyle(.secondary)
                                         .frame(width: 20, alignment: .trailing)
-                                    Text(model.name(no: no) ?? "\(no) 号")
+                                    Text(model.name(no: no) ?? "\(model.fmtNo(no)) 号")
                                         .font(.system(size: 13))
                                         .lineLimit(1)
                                 }

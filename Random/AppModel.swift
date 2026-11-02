@@ -410,6 +410,22 @@ final class AppModel {
 
     var classCount: Int { currentNames.count }
 
+    /// 当前班「第 i 个位置对应的学校学号」。
+    ///
+    /// 学校花名册的学号常有空号（转学、插班留下的），所以位置 ≠ 学号。
+    /// 名单里没带学号、或用户在 App 里手工改过姓名（override）时返回 nil，
+    /// 此时退回「位置即学号」的老行为。
+    var currentNumbers: [Int]? {
+        if let o = rosterOverrides[classID], !o.isEmpty { return nil }
+        return activeClasses.first { $0.id == classID }?.numbers
+    }
+
+    /// 内部位置（1 起）→ 学校学号。没有学号信息时原样返回。
+    func number(no: Int) -> Int {
+        guard let ns = currentNumbers, no >= 1, no <= ns.count else { return no }
+        return ns[no - 1]
+    }
+
     func name(no: Int) -> String? {
         let list = currentNames
         let i = no - 1
@@ -659,7 +675,9 @@ final class AppModel {
     var canUndo: Bool { !lastDrawn.isEmpty }
 
     func fmtNo(_ n: Int) -> String {
-        padZero ? String(format: "%02d", n) : String(n)
+        // n 是内部位置（1 起），显示时换成学校学号 —— 两者在有插班空号时并不相等
+        let v = number(no: n)
+        return padZero ? String(format: "%02d", v) : String(v)
     }
 
     /// 本次抽中的姓名（名单里没有对应项时自动跳过）
@@ -1288,7 +1306,7 @@ final class AppModel {
             self.sequenceResult = final
             self.cheer()
             self.logHistory(kind: Tool.sequence.rawValue,
-                            text: final.map { self.name(no: $0) ?? "\($0) 号" }
+                            text: final.map { self.name(no: $0) ?? "\(self.fmtNo($0)) 号" }
                                 .joined(separator: "、"))
         })
     }
@@ -1297,7 +1315,7 @@ final class AppModel {
     var sequencePlainText: String {
         guard !sequenceResult.isEmpty else { return "" }
         return sequenceResult.enumerated().map { i, no in
-            "\(i + 1). \(name(no: no) ?? "\(no) 号")"
+            "\(i + 1). \(name(no: no) ?? "\(fmtNo(no)) 号")"
         }.joined(separator: "\n")
     }
 
