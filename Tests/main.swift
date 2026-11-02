@@ -750,6 +750,49 @@ let only10 = AppModel(autoloadImported: false, seedRoster: [mixed[0]], seedName:
 check(only10.gradeGroups.count == 1, "只有一个年级时不出现空分组")
 
 
+// ── 名单里的学号（no）────────────────────────────────────────────
+// 真实教训：初三名单是按姓名拼音排的，而名单里又没有学号字段，
+// 于是「行序即学号」把学号全排错了。名单里写了 no 就必须按 no 落位。
+
+let jumbledJSON = """
+{"classes":[{"id":"2401","students":[
+ {"name":"丙","no":3},{"name":"甲","no":1},{"name":"乙","no":2}]}]}
+"""
+if let data = jumbledJSON.data(using: .utf8), let fmt = try? RosterFormat.parse(data) {
+    let cls = fmt.toSchoolClasses().first
+    check(cls?.names == ["甲", "乙", "丙"],
+          "学号乱序的名单按学号排序（实际 \(cls?.names ?? [])）")
+} else {
+    check(false, "学号乱序的名单应当能正常解析")
+}
+
+let dupNoJSON = """
+{"classes":[{"id":"2401","students":[{"name":"甲","no":1},{"name":"乙","no":1}]}]}
+"""
+var dupNoThrew = false
+if let data = dupNoJSON.data(using: .utf8) {
+    do { _ = try RosterFormat.parse(data) } catch { dupNoThrew = true }
+}
+check(dupNoThrew, "重复学号应当导入失败并说明原因")
+
+let gapNoJSON = """
+{"classes":[{"id":"2401","students":[{"name":"甲","no":1},{"name":"乙","no":3}]}]}
+"""
+var gapNoThrew = false
+if let data = gapNoJSON.data(using: .utf8) {
+    do { _ = try RosterFormat.parse(data) } catch { gapNoThrew = true }
+}
+check(gapNoThrew, "学号跳号应当导入失败（内部按下标表示学号，缺号会错位）")
+
+let plainJSON = """
+{"classes":[{"id":"2401","students":["甲","乙"]}]}
+"""
+if let data = plainJSON.data(using: .utf8), let fmt = try? RosterFormat.parse(data) {
+    check(fmt.toSchoolClasses().first?.names == ["甲", "乙"], "只写姓名的旧名单仍按文件顺序")
+} else {
+    check(false, "只写姓名的旧名单应当仍能解析")
+}
+
 if failures == 0 {
     print("全部通过 ✅")
     exit(0)
