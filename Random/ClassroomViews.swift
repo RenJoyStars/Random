@@ -24,9 +24,18 @@ struct ClassroomView: View {
                         if model.pickResults.isEmpty {
                             EmptyStage(text: "还没有点过名", symbol: "hand.wave",
                                        height: 104)
+                        } else if !model.showStudentNumber && !model.pickedNames.isEmpty {
+                            // 默认仅展示姓名（大字居中），避免插班生学号不连贯造成视觉突兀
+                            if multi {
+                                RollingNumber(text: model.pickedNames.joined(separator: "  "),
+                                              size: 64 * model.effectiveStageScale)
+                                    .resultPop(model.celebration)
+                            } else {
+                                RollingNumberUnit(text: model.pickedNames.first ?? display,
+                                                  size: 96 * model.effectiveStageScale)
+                                    .resultPop(model.celebration)
+                            }
                         } else if multi {
-                            // 点名滚动用滚轮，不用淡入淡出 —— 名字往上走，
-                            // 才像在花名册上一行一行往下点。
                             RollingNumber(text: display, size: 78 * model.effectiveStageScale)
                                 .resultPop(model.celebration)
                         } else {
@@ -35,7 +44,7 @@ struct ClassroomView: View {
                                 .resultPop(model.celebration)
                         }
 
-                        if !model.pickedNames.isEmpty {
+                        if model.showStudentNumber && !model.pickedNames.isEmpty {
                             RollingNames(text: model.pickedNames.joined(separator: "、"),
                                          size: multi ? 20 : 22)
                         }
@@ -59,11 +68,17 @@ struct ClassroomView: View {
 
                 SectionLabel("设置")
 
-                // 三行开关属于同一件事，装在一张卡片里（组内用细线分隔）。
+                // 设置卡片（组内用细线分隔）。
                 CardGroup {
                     OptionBar("每次点几名", hint: "可同时抽多人") {
                         NumberField(value: model.binding(\.pickCount), suffix: "人",
                                     range: 1...10)
+                    }
+
+                    OptionBar("公平点名", hint: "被点次数较少的同学优先被抽到") {
+                        Toggle("", isOn: model.binding(\.fairPick))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
                     }
 
                     OptionBar("不重复", hint: "点过的本轮不再点") {
@@ -72,10 +87,18 @@ struct ClassroomView: View {
                             .labelsHidden()
                     }
 
-                    OptionBar("补零显示", hint: "7 号显示为 07") {
-                        Toggle("", isOn: model.binding(\.padZero))
+                    OptionBar("显示学号", hint: "关掉后只突出展示姓名，避免插班生断号") {
+                        Toggle("", isOn: model.binding(\.showStudentNumber))
                             .toggleStyle(.switch)
                             .labelsHidden()
+                    }
+
+                    if model.showStudentNumber {
+                        OptionBar("补零显示", hint: "7 号显示为 07") {
+                            Toggle("", isOn: model.binding(\.padZero))
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                        }
                     }
                 }
 
@@ -110,10 +133,13 @@ struct ClassroomView: View {
 
                 Bar {
                     if model.drawn.isEmpty {
-                        EmptyRecords(text: "还没有记录。抽过的号码会留在这一栏，点一下可放回。")
+                        EmptyRecords(text: "还没有记录。抽过的同学会留在这一栏，点一下可放回。")
                     } else {
                         FlowGrid(items: model.drawn.sorted(), spacing: 7, minimum: 112) { n in
-                            RecordChip(text: model.fmtNo(n), sub: model.name(no: n)) {
+                            RecordChip(
+                                text: model.showStudentNumber ? model.fmtNo(n) : (model.name(no: n) ?? model.fmtNo(n)),
+                                sub: model.showStudentNumber ? model.name(no: n) : nil
+                            ) {
                                 withAnimation(.snappy(duration: 0.2)) { model.release(n) }
                             }
                         }
@@ -145,7 +171,7 @@ struct ClassroomView: View {
                         } else {
                             FlowGrid(items: model.leastPicked(of: model.classID, limit: 6),
                                      spacing: 7, minimum: 112) { stat in
-                                PickStatChip(no: model.fmtNo(stat.no),
+                                PickStatChip(no: model.showStudentNumber ? model.fmtNo(stat.no) : "",
                                              name: stat.name,
                                              count: stat.count)
                             }
@@ -167,14 +193,13 @@ private struct PickStatChip: View {
     let name: String
     let count: Int
 
-    // 和「已抽记录」同一套网格语言：无底色，学号弱、姓名强，
-    // 次数右对齐成一列。橙色只用来把"没点过"这三个字挑出来 ——
-    // 之前整块橙色底，一个卡片里六张橙纸，比结果本身还抢。
     var body: some View {
         HStack(spacing: 6) {
-            Text(no)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+            if !no.isEmpty {
+                Text(no)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
             Text(name)
                 .foregroundStyle(.primary)
                 .lineLimit(1)

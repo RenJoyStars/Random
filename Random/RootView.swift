@@ -11,14 +11,12 @@ struct RootView: View {
     /// 3.0 起不再监听窗口宽度去手动收起 / 撑宽边栏 —— 那套逻辑和用户拖窗口、
     /// 又和系统自己的折叠时机三方打架，表现就是「边栏忽隐忽现、拉宽后卡一下」。
     ///
-    /// 窗口能拉到多窄。窄了边栏会自动收（见 autoCollapseWidth），
-    /// 所以下限只需保证「只有内容区」时也放得下 —— 560 是实测不塌的宽度。
-    static let minWindowWidth: CGFloat = 560
+    /// 窗口能拉到多窄。边栏 220 + 内容区舒适的 460，保证窗口不塌陷、边栏不闪退。
+    static let minWindowWidth: CGFloat = 680
     static let minWindowHeight: CGFloat = 540
 
-    /// 窄于这个宽度就自动收起边栏；**宽回来不会自动打开**（见 body 里的说明）。
-    /// 取 800 ≈ 边栏最小 212 + 内容区舒适的 560 + 分隔线。
-    static let autoCollapseWidth: CGFloat = 800
+    /// 窄于这个宽度就自动收起边栏；与最小窗口宽度对齐，拖拽边框时绝不意外闪退收起。
+    static let autoCollapseWidth: CGFloat = 680
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
 
@@ -44,7 +42,7 @@ struct RootView: View {
         } detail: {
             detail
         }
-        .navigationSplitViewStyle(.balanced)
+        // 不再使用 .balanced 样式（balanced 会强制让边栏跟随窗口缩放等比伸缩，造成拖拽卡顿如橡皮筋）
         // 不再铺彩色光晕。
         //
         // 之前整窗叠了一张双色径向渐变（蓝 + 紫）当"玻璃要有东西可折射"的底，
@@ -423,6 +421,8 @@ struct RootView: View {
         case .letter:            LetterView()
         case .rockPaperScissors: RPSView()
         case .yesNo:             YesNoView()
+        case .groupPick:         GroupPickView()
+        case .countdown:         CountdownView()
         }
     }
 

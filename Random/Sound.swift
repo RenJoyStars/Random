@@ -232,6 +232,23 @@ final class Sound {
             players.append(node)
         }
         engine.connect(mixer, to: engine.mainMixerNode, format: format)
+
+        // 监听系统音频输出设备切换（插拔耳机、连蓝牙音箱、切换外放）。
+        // 发生切换时，系统会重置音频拓扑，必须重启 engine，否则音效全部静音。
+        NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleConfigChange()
+        }
+    }
+
+    private func handleConfigChange() {
+        running = false
+        if engine.isRunning { engine.stop() }
+        engine.reset()
+        _ = start()
     }
 
     private func applyVolume() {

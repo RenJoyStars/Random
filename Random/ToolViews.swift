@@ -219,8 +219,6 @@ struct RandomNumberView: View {
                         HStack(spacing: 10) {
                             Button("清空") { model.resetNumbers() }
                                 .buttonStyle(.borderless)
-                                // borderless 不带 tint 时是灰字，和同页其它蓝色次要操作
-                                // （「清空记录」「放回全部」）不是一个样子。
                                 .tint(.accentColor)
                                 .disabled(model.numDrawn.isEmpty)
                             Toggle("", isOn: model.binding(\.numNoRepeat))
@@ -230,6 +228,45 @@ struct RandomNumberView: View {
                 }
 
                 if model.numNoRepeat {
+                    Bar {
+                        HStack(spacing: 10) {
+                            StatTile(value: "\(model.numDrawn.count)",
+                                     label: "已抽",
+                                     symbol: "checkmark")
+
+                            Divider().frame(height: 24)
+
+                            StatTile(value: "\(model.numRemaining)",
+                                     label: "本轮剩余",
+                                     tint: model.numPoolEmpty ? .red : .accentColor,
+                                     symbol: model.numPoolEmpty ? "exclamationmark" : "arrow.forward")
+                            Spacer(minLength: 0)
+                            ClearButton(title: "放回全部", symbol: "arrow.uturn.backward",
+                                        disabled: model.numDrawn.isEmpty) {
+                                withAnimation(.snappy(duration: 0.2)) { model.resetNumbers() }
+                            }
+                        }
+                    }
+
+                    SectionLabel("已抽记录", count: "\(model.numDrawn.count) 个") {
+                        ClearButton(title: "清空记录",
+                                    disabled: model.numDrawn.isEmpty) {
+                            withAnimation(.snappy(duration: 0.2)) { model.resetNumbers() }
+                        }
+                    }
+
+                    Bar {
+                        if model.numDrawn.isEmpty {
+                            EmptyRecords(text: "还没有记录。抽过的数字会留在这一栏，点一下可放回。")
+                        } else {
+                            FlowGrid(items: model.numDrawn.sorted(), spacing: 7, minimum: 64) { n in
+                                RecordChip(text: "\(n)") {
+                                    withAnimation(.snappy(duration: 0.2)) { model.releaseNumber(n) }
+                                }
+                            }
+                        }
+                    }
+
                     Text("开启后它就像点名一样不会重复；关掉则每次都是独立随机（真的会连抽同一个数）。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -767,5 +804,219 @@ struct SequenceView: View {
         pb.setString(model.sequencePlainText, forType: .string)
         copied = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+    }
+}
+
+// MARK: - 抽小组 / 抽声部
+
+struct GroupPickView: View {
+    @Environment(AppModel.self) private var model
+
+    private var display: String {
+        model.groupPickResults.joined(separator: "  ·  ")
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                StageCard(minHeight: 180) {
+                    VStack(spacing: 10) {
+                        StageBadge(symbol: "person.3.fill", value: model.groupPickResults)
+                            .opacity(model.groupPickResults.isEmpty ? 0 : 1)
+
+                        if model.groupPickResults.isEmpty {
+                            EmptyStage(text: "待抽取小组或声部", symbol: "person.3.sequence", height: 100)
+                        } else {
+                            RollingNumber(text: display,
+                                          size: (model.groupPickResults.count > 1 ? 52 : 72) * model.effectiveStageScale)
+                                .resultPop(model.celebration)
+                        }
+
+                        StageCaption(text: caption)
+                    }
+                }
+                .animation(.snappy(duration: 0.12), value: model.groupPickResults)
+                .celebrationOverlay(model.celebration, theme: model.celebrationTheme,
+                                     level: model.effectLevel)
+
+                PrimaryButton(title: "抽一组", symbol: "person.3.fill",
+                              disabled: model.groupPickRolling) {
+                    model.drawGroupPick()
+                }
+
+                SectionLabel("抽取设置")
+
+                CardGroup {
+                    OptionBar("模式", hint: "普通组别或音乐合唱声部") {
+                        Picker("", selection: model.binding(\.groupPickMode)) {
+                            Text("组别 (1..N 组)").tag(0)
+                            Text("四部合唱 (S/A/T/B)").tag(1)
+                            Text("二部合唱 (高/低声部)").tag(2)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 280)
+                    }
+
+                    if model.groupPickMode == 0 {
+                        OptionBar("组数", hint: "全班共分成几个小组") {
+                            NumberField(value: model.binding(\.groupPickTotal), suffix: "组", range: 2...16)
+                        }
+                    }
+
+                    OptionBar("每次抽取", hint: "同时抽出几个组") {
+                        NumberField(value: model.binding(\.groupPickCount), suffix: "组", range: 1...4)
+                    }
+                }
+
+                if !model.groupPickHistory.isEmpty {
+                    SectionLabel("抽取记录", count: "\(model.groupPickHistory.count) 次") {
+                        ClearButton(title: "清空记录", disabled: model.groupPickHistory.isEmpty) {
+                            withAnimation(.snappy(duration: 0.2)) { model.resetGroupPick() }
+                        }
+                    }
+
+                    Bar {
+                        FlowGrid(items: model.groupPickHistory, spacing: 7, minimum: 110) { item in
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(Color.accentColor)
+                                    .font(.system(size: 11))
+                                Text(item)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.primary)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.primary.opacity(0.04),
+                                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
+                    }
+                }
+
+                Spacer(minLength: 2)
+            }
+            .padding(20)
+        }
+        .background(Color.clear)
+    }
+
+    private var caption: String {
+        switch model.groupPickMode {
+        case 1: return "四部合唱：女高音 / 女低音 / 男高音 / 男低音"
+        case 2: return "二部合唱：高声部 / 低声部"
+        default: return "共 \(model.groupPickTotal) 个小组 · 每次抽 \(model.groupPickCount) 组"
+        }
+    }
+}
+
+// MARK: - 课堂倒计时
+
+struct CountdownView: View {
+    @Environment(AppModel.self) private var model
+
+    private var timeText: String {
+        let m = model.countdownRemaining / 60
+        let s = model.countdownRemaining % 60
+        return String(format: "%02d:%02d", m, s)
+    }
+
+    private var isUrgent: Bool {
+        model.countdownRemaining > 0 && model.countdownRemaining <= 10
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                StageCard(minHeight: 200) {
+                    VStack(spacing: 14) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "timer")
+                            Text(model.countdownRunning ? "倒计时中" : (model.countdownRemaining == 0 ? "时间到！" : "就绪"))
+                        }
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isUrgent ? Color.red : Color.accentColor)
+
+                        // 超大倒计时大字
+                        Text(timeText)
+                            .font(.system(size: 96 * model.effectiveStageScale, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(isUrgent ? Color.red : Color.primary)
+                            .resultPop(model.celebration)
+
+                        StageCaption(text: "音乐课堂视唱练耳 / 讨论练习计时专用")
+                    }
+                }
+                .animation(.snappy(duration: 0.12), value: model.countdownRemaining)
+                .celebrationOverlay(model.celebration, theme: model.celebrationTheme,
+                                     level: model.effectLevel)
+
+                HStack(spacing: 12) {
+                    PrimaryButton(
+                        title: model.countdownRunning ? "暂停" : (model.countdownRemaining == 0 ? "重新开始" : "开始计时"),
+                        symbol: model.countdownRunning ? "pause.fill" : "play.fill",
+                        disabled: false
+                    ) {
+                        model.toggleCountdown()
+                    }
+
+                    Button {
+                        withAnimation(.snappy(duration: 0.2)) { model.resetCountdown() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.counterclockwise")
+                            Text("重置")
+                        }
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(minWidth: 80, minHeight: 38)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                SectionLabel("快捷时长预设")
+
+                Bar {
+                    HStack(spacing: 8) {
+                        presetButton("30 秒", seconds: 30)
+                        presetButton("1 分钟", seconds: 60)
+                        presetButton("2 分钟", seconds: 120)
+                        presetButton("3 分钟", seconds: 180)
+                        presetButton("5 分钟", seconds: 300)
+                    }
+                }
+
+                SectionLabel("自定义时长")
+
+                CardGroup {
+                    OptionBar("计时总长度", hint: "按分钟自定义") {
+                        NumberField(value: Binding(
+                            get: { max(1, model.countdownTotal / 60) },
+                            set: { model.setCountdown(seconds: $0 * 60) }
+                        ), suffix: "分钟", range: 1...60)
+                    }
+                }
+
+                Spacer(minLength: 2)
+            }
+            .padding(20)
+        }
+        .background(Color.clear)
+    }
+
+    private func presetButton(_ title: String, seconds: Int) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.15)) {
+                model.setCountdown(seconds: seconds)
+            }
+        } label: {
+            Text(title)
+                .font(.system(size: 12, weight: model.countdownTotal == seconds ? .semibold : .regular))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(model.countdownTotal == seconds ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.04),
+                            in: Capsule())
+                .foregroundStyle(model.countdownTotal == seconds ? Color.accentColor : Color.primary)
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -28,8 +28,8 @@ enum SidebarItem: Hashable, Identifiable {
 // MARK: - 随机工具
 
 enum Tool: String, CaseIterable, Identifiable, Hashable {
-    // 分组排在第一个：它是「课堂活动」的起点，和后面八个「随手抽个结果」不是一类。
-    case grouping, sequence, randomNumber, dice, coin, card, color, letter, rockPaperScissors, yesNo
+    // 分组排在第一个：它是「课堂活动」的起点，和后面「随手抽个结果」不是一类。
+    case grouping, sequence, groupPick, countdown, randomNumber, dice, coin, card, color, letter, rockPaperScissors, yesNo
 
     var id: String { rawValue }
 
@@ -37,6 +37,8 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .grouping:          return "随机分组"
         case .sequence:          return "随机顺序"
+        case .groupPick:         return "抽小组/声部"
+        case .countdown:         return "课堂倒计时"
         case .randomNumber:      return "随机数字"
         case .dice:              return "骰子"
         case .coin:              return "硬币"
@@ -52,6 +54,8 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .grouping:          return "person.3.sequence"
         case .sequence:          return "list.number"
+        case .groupPick:         return "person.3.fill"
+        case .countdown:         return "timer"
         case .randomNumber:      return "arrow.left.arrow.right"
         case .dice:              return "die.face.6"
         case .coin:              return "circle.lefthalf.filled"
@@ -67,6 +71,8 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .grouping:          return "分组"
         case .sequence:          return "打乱"
+        case .groupPick:         return "抽一组"
+        case .countdown:         return "开始"
         case .dice:              return "掷骰子"
         case .coin:              return "抛硬币"
         case .card:              return "抽一张"
@@ -503,6 +509,10 @@ final class AppModel {
 
     var padZero: Bool = true
     var noRepeat: Bool = true
+    /// 公平点名：加权无放回抽样，历史被点次数越少的同学权重越高
+    var fairPick: Bool = true
+    /// 是否展示学号（默认 false：音乐课以姓名为准，避免插班生 60/61 号断号带来困扰）
+    var showStudentNumber: Bool = false
 
     /// 每次点名同时抽几个人
     var pickCount: Int = 1
@@ -718,7 +728,7 @@ final class AppModel {
         }
         let want = min(effectivePickCount, 10)
         let take = min(want, pool.count)
-        let final = sample(pool, take).sorted()
+        let final = (fairPick ? weightedSample(pool, take) : sample(pool, take)).sorted()
         let hi = max(1, classCount)
 
         pickRolling = true
@@ -928,6 +938,12 @@ final class AppModel {
         persist()
     }
 
+    /// 单个号码放回可抽池（撤销抽过记录）
+    func releaseNumber(_ n: Int) {
+        numDrawn.removeAll { $0 == n }
+        persist()
+    }
+
     // MARK: 骰子
 
     var diceCount: Int = 2
@@ -985,6 +1001,89 @@ final class AppModel {
     var yesNoRolling: Bool = false
     var yesCount: Int = 0
     var noCount: Int = 0
+
+    // MARK: 抽小组 / 抽声部
+
+    var groupPickTotal: Int = 4
+    var groupPickCount: Int = 1
+    var groupPickMode: Int = 0 // 0: 组号 (第 1 组..第 N 组), 1: 四部合唱, 2: 二部合唱
+    var groupPickResults: [String] = []
+    var groupPickRolling: Bool = false
+    var groupPickHistory: [String] = []
+
+    var availableGroupOptions: [String] {
+        switch groupPickMode {
+        case 1:
+            return ["女高音 (Soprano)", "女低音 (Alto)", "男高音 (Tenor)", "男低音 (Bass)"]
+        case 2:
+            return ["高声部", "低声部"]
+        default:
+            let count = max(2, min(groupPickTotal, 16))
+            return (1...count).map { "第 \($0) 组" }
+        }
+    }
+
+    func resetGroupPick() {
+        groupPickResults = []
+        groupPickHistory = []
+        persist()
+    }
+
+    // MARK: 课堂倒计时
+
+    var countdownTotal: Int = 60
+    var countdownRemaining: Int = 60
+    var countdownRunning: Bool = false
+    @ObservationIgnored private var countdownTimer: Timer?
+
+    func setCountdown(seconds: Int) {
+        pauseCountdown()
+        countdownTotal = max(5, seconds)
+        countdownRemaining = countdownTotal
+        persist()
+    }
+
+    func toggleCountdown() {
+        if countdownRunning {
+            pauseCountdown()
+        } else {
+            startCountdown()
+        }
+    }
+
+    func startCountdown() {
+        guard !countdownRunning else { return }
+        if countdownRemaining <= 0 {
+            countdownRemaining = countdownTotal
+        }
+        countdownRunning = true
+        countdownTimer?.invalidate()
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+            guard let self else {
+                timer.invalidate()
+                return
+            }
+            if self.countdownRemaining > 1 {
+                self.countdownRemaining -= 1
+            } else {
+                self.countdownRemaining = 0
+                self.pauseCountdown()
+                Sound.shared.victory()
+                self.cheer()
+            }
+        }
+    }
+
+    func pauseCountdown() {
+        countdownRunning = false
+        countdownTimer?.invalidate()
+        countdownTimer = nil
+    }
+
+    func resetCountdown() {
+        pauseCountdown()
+        countdownRemaining = countdownTotal
+    }
 
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -1100,6 +1199,12 @@ final class AppModel {
         if let v = d["groupCount"] as? Int { groupCount = v }
         if let v = d["groupSize"] as? Int { groupSize = v }
         if let v = d["groupShowNumbers"] as? Bool { groupShowNumbers = v }
+        if let v = d["fairPick"] as? Bool { fairPick = v }
+        if let v = d["showStudentNumber"] as? Bool { showStudentNumber = v }
+        if let v = d["groupPickTotal"] as? Int { groupPickTotal = v }
+        if let v = d["groupPickCount"] as? Int { groupPickCount = v }
+        if let v = d["groupPickMode"] as? Int { groupPickMode = v }
+        if let v = d["countdownTotal"] as? Int { countdownTotal = v; countdownRemaining = v }
         if let v = d["effectLevel"] as? String,
            let level = EffectLevel(rawValue: v) { effectLevel = level }
     }
@@ -1110,6 +1215,9 @@ final class AppModel {
             "classID": classID,
             "selection": selection.id,
             "padZero": padZero, "noRepeat": noRepeat, "pickCount": pickCount,
+            "fairPick": fairPick, "showStudentNumber": showStudentNumber,
+            "groupPickTotal": groupPickTotal, "groupPickCount": groupPickCount, "groupPickMode": groupPickMode,
+            "countdownTotal": countdownTotal,
             "soundOn": soundOn,
             "celebrationStyle": celebrationStyle, "soundStyle": soundStyle,
             "effectLevel": effectLevel.rawValue,
@@ -1273,6 +1381,39 @@ final class AppModel {
         var out: [T] = []
         for _ in 0..<min(k, rest.count) {
             out.append(rest.remove(at: randInt(0, rest.count - 1)))
+        }
+        return out
+    }
+
+    /// 公平点名：带权无放回抽样。
+    /// 依据当前班级历史被点次数，被点次数越少（尤其是 0 次）权重越高。
+    func weightedSample(_ pool: [Int], _ k: Int) -> [Int] {
+        guard !pool.isEmpty && k > 0 else { return [] }
+        var rest = pool
+        var out: [Int] = []
+        let counts = pickCounts(of: classID)
+        for _ in 0..<min(k, pool.count) {
+            guard !rest.isEmpty else { break }
+            let weights = rest.map { no -> Double in
+                let c = counts[no] ?? 0
+                return 1.0 / Double(c + 1)
+            }
+            let total = weights.reduce(0, +)
+            guard total > 0 else {
+                out.append(rest.remove(at: randInt(0, rest.count - 1)))
+                continue
+            }
+            let r = Double.random(in: 0..<total)
+            var sum: Double = 0
+            var chosen = 0
+            for (idx, w) in weights.enumerated() {
+                sum += w
+                if r < sum {
+                    chosen = idx
+                    break
+                }
+            }
+            out.append(rest.remove(at: chosen))
         }
         return out
     }
@@ -1589,6 +1730,33 @@ final class AppModel {
         persist()
     }
 
+    // MARK: - 抽小组逻辑
+
+    func drawGroupPick() {
+        guard !groupPickRolling else { return }
+        let pool = availableGroupOptions
+        guard !pool.isEmpty else { return }
+        let count = min(max(1, groupPickCount), pool.count)
+        let final = sample(pool, count)
+
+        groupPickRolling = true
+        finishAfter(1.8, tick: 0.118, tickEnd: 0.042, sound: .shuffle, roll: {
+            self.groupPickResults = self.sample(pool, count)
+        }, settle: {
+            Sound.shared.victory()
+            self.groupPickRolling = false
+            self.groupPickResults = final
+            for item in final {
+                self.groupPickHistory.insert(item, at: 0)
+            }
+            if self.groupPickHistory.count > 30 {
+                self.groupPickHistory = Array(self.groupPickHistory.prefix(30))
+            }
+            self.cheer()
+            self.persist()
+        })
+    }
+
     // MARK: - 统一入口
 
     func step(_ delta: Int) {
@@ -1609,6 +1777,8 @@ final class AppModel {
         case .classroom:          drawPick()
         case .tool(.grouping):          drawGroups()
         case .tool(.sequence):          drawSequence()
+        case .tool(.groupPick):         drawGroupPick()
+        case .tool(.countdown):         toggleCountdown()
         case .tool(.randomNumber):      drawNumbers()
         case .tool(.dice):              rollDice()
         case .tool(.coin):              flipCoin()
@@ -1631,6 +1801,8 @@ final class AppModel {
         case .classroom:                resetPick()
         case .tool(.grouping):          resetGroups()
         case .tool(.sequence):          sequenceResult = []
+        case .tool(.groupPick):         resetGroupPick()
+        case .tool(.countdown):         resetCountdown()
         case .tool(.randomNumber):      resetNumbers()
         case .tool(.dice):              diceValues = Array(repeating: 1, count: diceCount)
         case .tool(.coin):              resetCoin()
@@ -1650,6 +1822,8 @@ final class AppModel {
         case .classroom:                return !drawn.isEmpty
         case .tool(.grouping):          return !groups.isEmpty
         case .tool(.sequence):          return !sequenceResult.isEmpty
+        case .tool(.groupPick):         return !groupPickResults.isEmpty || !groupPickHistory.isEmpty
+        case .tool(.countdown):         return countdownRemaining != countdownTotal || countdownRunning
         case .tool(.randomNumber):      return !numResults.isEmpty || !numDrawn.isEmpty
         case .tool(.dice):              return diceValues.contains { $0 != 1 }
         case .tool(.coin):              return coinHeads + coinTails > 0
@@ -1668,6 +1842,8 @@ final class AppModel {
         case .classroom:                return pickRolling
         case .tool(.grouping):          return groupingRolling
         case .tool(.sequence):          return sequenceRolling
+        case .tool(.groupPick):         return groupPickRolling
+        case .tool(.countdown):         return false
         case .tool(.randomNumber):      return numRolling
         case .tool(.dice):              return diceRolling
         case .tool(.coin):              return coinRolling

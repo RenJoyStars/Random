@@ -54,7 +54,7 @@ check(emptyModel.hasClasses == false, "初始没有任何班级")
 check(emptyModel.activeClasses.isEmpty, "班级列表为空")
 check(emptyModel.currentNames.isEmpty, "当前姓名表为空")
 check(emptyModel.pickPool.isEmpty, "号码池为空")
-check(emptyModel.allSidebarItems.count == 11, "10 个随机工具 + 历史记录（实际 \(emptyModel.allSidebarItems.count)）")
+check(emptyModel.allSidebarItems.count == 13, "12 个随机工具 + 历史记录（实际 \(emptyModel.allSidebarItems.count)）")
 emptyModel.selection = .classroom("")
 emptyModel.drawPick()
 check(emptyModel.pickResults.isEmpty, "没有名单时点名不出结果")
@@ -188,8 +188,8 @@ check((0...1).contains(m.red) && (0...1).contains(m.green) && (0...1).contains(m
       "RGB 分量都在 0–1 之间")
 
 print("\n[11] 侧边栏条目与「有无记录」判定")
-check(m.allSidebarItems.count == 17,
-      "6 个班 + 10 个随机工具 + 历史 = 17 项（实际 \(m.allSidebarItems.count)）")
+check(m.allSidebarItems.count == 19,
+      "6 个班 + 12 个随机工具 + 历史 = 19 项（实际 \(m.allSidebarItems.count)）")
 check(m.allSidebarItems.first == .classroom("2601"), "第一项是 2601 班")
 check(m.allSidebarItems.last == .history, "最后一项是「历史记录」")
 m.selection = .classroom("2605")
@@ -420,6 +420,9 @@ nm3.commitNumbers([3, 5])
 let nm4 = newModel()
 check(nm4.numDrawn == [3, 5], "抽过的记录重启后还在（实际 \(nm4.numDrawn)）")
 check(!nm4.numPool.contains(3), "重启后 3 号仍在池外")
+nm4.releaseNumber(3)
+check(nm4.numDrawn == [5], "releaseNumber 放回 3 号后只剩 5（实际 \(nm4.numDrawn)）")
+check(nm4.numPool.contains(3), "放回后 3 号重新进入可选池")
 
 print("\n[18] 颜色换算的防御（外部文本可能解析出 NaN / inf）")
 
