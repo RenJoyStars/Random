@@ -839,22 +839,26 @@ struct GroupPickView: View {
                 .celebrationOverlay(model.celebration, theme: model.celebrationTheme,
                                      level: model.effectLevel)
 
-                PrimaryButton(title: "抽一组", symbol: "person.3.fill",
-                              disabled: model.groupPickRolling) {
-                    model.drawGroupPick()
+                HStack {
+                    Spacer()
+                    PrimaryButton(title: "抽一组", symbol: "person.3.fill",
+                                  disabled: model.groupPickRolling) {
+                        model.drawGroupPick()
+                    }
+                    Spacer()
                 }
 
                 SectionLabel("抽取设置")
 
                 CardGroup {
-                    OptionBar("模式", hint: "普通组别或音乐合唱声部") {
+                    OptionField("抽取模式") {
                         Picker("", selection: model.binding(\.groupPickMode)) {
                             Text("组别 (1..N 组)").tag(0)
                             Text("四部合唱 (S/A/T/B)").tag(1)
                             Text("二部合唱 (高/低声部)").tag(2)
                         }
                         .pickerStyle(.segmented)
-                        .frame(width: 280)
+                        .labelsHidden()
                     }
 
                     if model.groupPickMode == 0 {

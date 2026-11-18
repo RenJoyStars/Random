@@ -577,6 +577,8 @@ struct NumberField: View {
                     .multilineTextAlignment(.center)
                     .frame(width: width)
                     .focused($focused)
+                    .textContentType(nil)
+                    .autocorrectionDisabled()
                     .onSubmit(commit)
                     .accessibilityLabel(label ?? "数值")
                 if let suffix {

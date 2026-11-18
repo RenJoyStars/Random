@@ -25,14 +25,14 @@ struct ClassroomView: View {
                             EmptyStage(text: "还没有点过名", symbol: "hand.wave",
                                        height: 104)
                         } else if !model.showStudentNumber && !model.pickedNames.isEmpty {
-                            // 默认仅展示姓名（大字居中），避免插班生学号不连贯造成视觉突兀
+                            // 默认仅展示姓名（大字居中），使用 RollingNumber，纯姓名后绝不带奇怪的「号」字
                             if multi {
                                 RollingNumber(text: model.pickedNames.joined(separator: "  "),
                                               size: 64 * model.effectiveStageScale)
                                     .resultPop(model.celebration)
                             } else {
-                                RollingNumberUnit(text: model.pickedNames.first ?? display,
-                                                  size: 96 * model.effectiveStageScale)
+                                RollingNumber(text: model.pickedNames.first ?? display,
+                                              size: 96 * model.effectiveStageScale)
                                     .resultPop(model.celebration)
                             }
                         } else if multi {
