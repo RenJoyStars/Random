@@ -15,9 +15,10 @@ struct HistoryView: View {
 
     /// nil = 全部；其余是 `HistoryKind.pick` / `.group` / `Tool.rawValue`
     @State private var filter: String? = nil
+    @State private var classFilter: String? = nil
     @State private var copied = false
 
-    private var entries: [HistoryEntry] { model.historyEntries(kind: filter) }
+    private var entries: [HistoryEntry] { model.historyEntries(kind: filter, classID: classFilter) }
 
     var body: some View {
         ScrollView {
@@ -35,12 +36,12 @@ struct HistoryView: View {
                     }
                 }
 
-                SectionLabel("筛选", count: filter == nil ? nil : "\(entries.count) 条") {
+                SectionLabel("筛选", count: (filter == nil && classFilter == nil) ? nil : "\(entries.count) 条") {
                     ClearButton(title: copied ? "已复制" : "复制 CSV",
                                 symbol: copied ? "checkmark" : "doc.on.doc",
                                 tint: copied ? .green : .accentColor,
-                                disabled: model.history.isEmpty) {
-                        Pasteboard.copy(model.historyCSV())
+                                disabled: entries.isEmpty) {
+                        Pasteboard.copy(model.historyCSV(kind: filter, classID: classFilter))
                         copied = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
                     }
@@ -49,9 +50,8 @@ struct HistoryView: View {
                 Bar {
                     HStack(spacing: 12) {
                         Text("类型").font(.system(size: 13))
-                        Spacer(minLength: 12)
                         Picker("", selection: $filter) {
-                            Text("全部").tag(String?.none)
+                            Text("全部类型").tag(String?.none)
                             Text("点名").tag(String?.some(HistoryKind.pick))
                             Text("分组").tag(String?.some(HistoryKind.group))
                             ForEach(Tool.allCases) { tool in
@@ -60,7 +60,23 @@ struct HistoryView: View {
                         }
                         .pickerStyle(.menu)
                         .labelsHidden()
-                        .frame(maxWidth: 200)
+                        .frame(maxWidth: 160)
+
+                        if model.hasClasses {
+                            Divider().frame(height: 18)
+                            Text("班级").font(.system(size: 13))
+                            Picker("", selection: $classFilter) {
+                                Text("全部班级").tag(String?.none)
+                                ForEach(model.activeClasses) { cls in
+                                    Text(cls.shortTitle).tag(String?.some(cls.id))
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .frame(maxWidth: 160)
+                        }
+
+                        Spacer(minLength: 0)
                     }
                 }
 
@@ -170,11 +186,12 @@ struct HistoryView: View {
         df.dateFormat = "yyyyMMdd-HHmm"
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
-        panel.nameFieldStringValue = "Random-历史记录-\(df.string(from: Date())).csv"
-        panel.message = "导出全部历史记录（CSV）"
+        let classSuffix = classFilter.flatMap { id in model.title(of: id) } ?? "全部"
+        panel.nameFieldStringValue = "Random-历史记录-\(classSuffix)-\(df.string(from: Date())).csv"
+        panel.message = "导出历史记录（CSV）"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try model.historyCSV().write(to: url, atomically: true, encoding: .utf8)
+            try model.historyCSV(kind: filter, classID: classFilter).write(to: url, atomically: true, encoding: .utf8)
         } catch {
             let alert = NSAlert()
             alert.alertStyle = .warning

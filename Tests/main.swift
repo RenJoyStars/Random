@@ -811,6 +811,26 @@ if let data = plainJSON.data(using: .utf8), let fmt = try? RosterFormat.parse(da
     check(false, "只写姓名的旧名单应当仍能解析")
 }
 
+print("\n[28] 撤销历史联动与按班筛选")
+let undoM = newModel()
+undoM.classID = "2601"
+undoM.logHistory(kind: HistoryKind.pick, classID: "2601", numbers: [5], text: "05 张三")
+let countBeforeUndo = undoM.pickCounts(of: "2601")[5] ?? 0
+undoM.drawnByClass["2601"] = [5]
+undoM.lastDrawn = [5]
+undoM.undoPick()
+check((undoM.drawnByClass["2601"] ?? []).isEmpty, "撤销后已抽池移除了该号")
+let countAfterUndo = undoM.pickCounts(of: "2601")[5] ?? 0
+check(countAfterUndo == countBeforeUndo - 1, "撤销后历史统计同步减少，消除脏数据")
+
+// 按班级筛选历史
+undoM.logHistory(kind: HistoryKind.pick, classID: "2601", numbers: [1], text: "01 甲")
+undoM.logHistory(kind: HistoryKind.pick, classID: "2602", numbers: [2], text: "02 乙")
+let filtered2601 = undoM.historyEntries(kind: nil, classID: "2601")
+check(filtered2601.allSatisfy { $0.classID == "2601" }, "按班筛选历史只返回该班记录")
+let csv2601 = undoM.historyCSV(kind: nil, classID: "2601")
+check(csv2601.contains("2601"), "按班导出的 CSV 包含该班记录")
+
 if failures == 0 {
     print("全部通过 ✅")
     exit(0)

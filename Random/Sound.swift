@@ -397,7 +397,7 @@ final class Sound {
         previewTimer?.invalidate()
         beginRound()
         var p = 0.0
-        previewTimer = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] timer in
+        let t = Timer(timeInterval: 0.10, repeats: true) { [weak self] timer in
             guard let self else { timer.invalidate(); return }
             if p >= 1 {
                 timer.invalidate()
@@ -407,6 +407,8 @@ final class Sound {
             self.tick(p)
             p += 0.14
         }
+        RunLoop.main.add(t, forMode: .common)
+        previewTimer = t
     }
 
     // MARK: - 播放

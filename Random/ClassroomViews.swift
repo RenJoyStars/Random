@@ -24,9 +24,19 @@ struct ClassroomView: View {
                         if model.pickResults.isEmpty {
                             EmptyStage(text: "还没有点过名", symbol: "hand.wave",
                                        height: 104)
+                        } else if model.pickResults.count >= 5 {
+                            // 5~10 人群抽：自动转为多卡片大字网格，避免长文本被系统截断成省略号
+                            MultiPickGrid(numbers: model.pickResults,
+                                          showNumber: model.showStudentNumber,
+                                          scale: model.effectiveStageScale)
+                                .resultPop(model.celebration)
                         } else if !model.showStudentNumber && !model.pickedNames.isEmpty {
                             // 默认仅展示姓名（大字居中），使用 RollingNumber，纯姓名后绝不带奇怪的「号」字
-                            if multi {
+                            if model.pickResults.count >= 3 {
+                                RollingNumber(text: model.pickedNames.joined(separator: "  "),
+                                              size: 44 * model.effectiveStageScale)
+                                    .resultPop(model.celebration)
+                            } else if multi {
                                 RollingNumber(text: model.pickedNames.joined(separator: "  "),
                                               size: 64 * model.effectiveStageScale)
                                     .resultPop(model.celebration)
@@ -36,7 +46,8 @@ struct ClassroomView: View {
                                     .resultPop(model.celebration)
                             }
                         } else if multi {
-                            RollingNumber(text: display, size: 78 * model.effectiveStageScale)
+                            RollingNumber(text: display,
+                                          size: (model.pickResults.count >= 3 ? 56 : 78) * model.effectiveStageScale)
                                 .resultPop(model.celebration)
                         } else {
                             RollingNumberUnit(text: display,
@@ -44,9 +55,9 @@ struct ClassroomView: View {
                                 .resultPop(model.celebration)
                         }
 
-                        if model.showStudentNumber && !model.pickedNames.isEmpty {
+                        if model.showStudentNumber && !model.pickedNames.isEmpty && model.pickResults.count < 5 {
                             RollingNames(text: model.pickedNames.joined(separator: "、"),
-                                         size: multi ? 20 : 22)
+                                         size: multi ? (model.pickResults.count >= 3 ? 18 : 20) : 22)
                         }
 
                         StageCaption(text: model.pickMessage)
@@ -162,7 +173,7 @@ struct ClassroomView: View {
                             .foregroundStyle(.secondary)
 
                         if model.history.isEmpty {
-                            Text("历史从 2.0 起记录。升级前点过的名字没有时间戳，不补进来 —— 这里只统计真发生过的事。")
+                            Text("根据本学期点名历史自动统计，点名后此处将动态列出被点最少的同学，清空历史可重置。")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -213,5 +224,45 @@ private struct PickStatChip: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// 5~10 人群抽自适应大字网格：保证每位同学的姓名与学号完整醒目，绝不被单行截断
+private struct MultiPickGrid: View {
+    @Environment(AppModel.self) private var model
+    let numbers: [Int]
+    let showNumber: Bool
+    let scale: Double
+
+    private let columns = [GridItem(.adaptive(minimum: 118), spacing: 8)]
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 8) {
+            ForEach(numbers, id: \.self) { no in
+                VStack(spacing: 3) {
+                    if showNumber {
+                        Text(model.fmtNo(no))
+                            .font(.system(size: 20 * scale, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    Text(model.name(no: no) ?? model.fmtNo(no))
+                        .font(.system(size: (showNumber ? 17 : 22) * scale, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .frame(maxWidth: .infinity)
+                .background(Color.primary.opacity(0.06),
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                }
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
     }
 }

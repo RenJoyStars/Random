@@ -841,7 +841,8 @@ struct GroupPickView: View {
 
                 HStack {
                     Spacer()
-                    PrimaryButton(title: "抽一组", symbol: "person.3.fill",
+                    PrimaryButton(title: model.groupPickCount > 1 ? "抽 \(model.groupPickCount) 组" : "抽一组",
+                                  symbol: "person.3.fill",
                                   disabled: model.groupPickRolling) {
                         model.drawGroupPick()
                     }
@@ -992,11 +993,24 @@ struct CountdownView: View {
                 SectionLabel("自定义时长")
 
                 CardGroup {
-                    OptionBar("计时总长度", hint: "按分钟自定义") {
+                    OptionBar("自定义分钟", hint: "0 ~ 60 分钟") {
                         NumberField(value: Binding(
-                            get: { max(1, model.countdownTotal / 60) },
-                            set: { model.setCountdown(seconds: $0 * 60) }
-                        ), suffix: "分钟", range: 1...60)
+                            get: { model.countdownTotal / 60 },
+                            set: {
+                                let s = model.countdownTotal % 60
+                                model.setCountdown(seconds: max(5, $0 * 60 + s))
+                            }
+                        ), suffix: "分", range: 0...60)
+                    }
+
+                    OptionBar("自定义秒数", hint: "0 ~ 59 秒微调") {
+                        NumberField(value: Binding(
+                            get: { model.countdownTotal % 60 },
+                            set: {
+                                let m = model.countdownTotal / 60
+                                model.setCountdown(seconds: max(5, m * 60 + $0))
+                            }
+                        ), suffix: "秒", range: 0...59)
                     }
                 }
 

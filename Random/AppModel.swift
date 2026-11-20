@@ -542,6 +542,7 @@ final class AppModel {
     var pickMessage: String = AppModel.idleMessage
     var drawnByClass: [String: [Int]] = [:]
     var lastDrawn: [Int] = []
+    var lastNumDrawn: [Int] = []
 
     /// 落定计数：点名 / 抽取落定时 +1，界面据此放一次彩带。属于瞬时状态，不持久化。
     var celebration: Int = 0
@@ -606,15 +607,20 @@ final class AppModel {
         return Array(all.prefix(max(0, limit)))
     }
 
-    /// 按类型筛选历史；`nil` = 全部。界面里新的在上。
-    func historyEntries(kind: String?) -> [HistoryEntry] {
-        let all = kind.map { k in history.filter { $0.kind == k } } ?? history
+    /// 按类型和班级筛选历史；`nil` = 全部。界面里新的在上。
+    func historyEntries(kind: String?, classID: String? = nil) -> [HistoryEntry] {
+        var all = history
+        if let kind { all = all.filter { $0.kind == kind } }
+        if let classID, !classID.isEmpty { all = all.filter { $0.classID == classID } }
         return Array(all.reversed())
     }
 
-    /// 导出用的 CSV（表头 + 全部记录，新的在上）
-    func historyCSV() -> String {
-        HistoryCSV.make(Array(history.reversed())) { [weak self] id in
+    /// 导出用的 CSV（表头 + 全部记录，新的在上，支持类型与班级筛选）
+    func historyCSV(kind: String? = nil, classID: String? = nil) -> String {
+        var all = history
+        if let kind { all = all.filter { $0.kind == kind } }
+        if let classID, !classID.isEmpty { all = all.filter { $0.classID == classID } }
+        return HistoryCSV.make(Array(all.reversed())) { [weak self] id in
             self?.title(of: id) ?? id
         }
     }
@@ -682,7 +688,13 @@ final class AppModel {
         guard noRepeat else { return pickTotal }
         return max(0, pickTotal - Set(drawn).count)
     }
-    var canUndo: Bool { !lastDrawn.isEmpty }
+    var canUndo: Bool {
+        switch selection {
+        case .classroom: return !lastDrawn.isEmpty
+        case .tool(.randomNumber): return !lastNumDrawn.isEmpty
+        default: return false
+        }
+    }
 
     func fmtNo(_ n: Int) -> String {
         // n 是内部位置（1 起），显示时换成学校学号 —— 两者在有插班空号时并不相等
@@ -767,12 +779,20 @@ final class AppModel {
 
     func undoPick() {
         guard !lastDrawn.isEmpty else { return }
+        let undid = lastDrawn
         var cur = drawnByClass[classID] ?? []
-        cur.removeAll { lastDrawn.contains($0) }
+        cur.removeAll { undid.contains($0) }
         drawnByClass[classID] = cur
         lastDrawn = []
         pickResults = []
         pickMessage = "已撤销上一次"
+
+        // 同步回滚历史记录：移除对应的最新点名条目，保证点名统计与公平算法零脏数据
+        if let idx = history.lastIndex(where: { $0.kind == HistoryKind.pick && $0.classID == classID && $0.numbers == undid }) {
+            history.remove(at: idx)
+            persistHistory()
+        }
+
         persist()
     }
 
@@ -935,6 +955,22 @@ final class AppModel {
     func resetNumbers() {
         numDrawn = []
         numResults = []
+        lastNumDrawn = []
+        persist()
+    }
+
+    /// 撤销上一次抽取的随机数字（同步撤销抽过池与历史记录）
+    func undoNumbers() {
+        guard !lastNumDrawn.isEmpty else { return }
+        let undid = lastNumDrawn
+        numDrawn.removeAll { undid.contains($0) }
+        lastNumDrawn = []
+        numResults = []
+        let text = undid.map(String.init).joined(separator: " ")
+        if let idx = history.lastIndex(where: { $0.kind == Tool.randomNumber.rawValue && $0.text == text }) {
+            history.remove(at: idx)
+            persistHistory()
+        }
         persist()
     }
 
@@ -1058,13 +1094,17 @@ final class AppModel {
         }
         countdownRunning = true
         countdownTimer?.invalidate()
-        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+        let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] timer in
             guard let self else {
                 timer.invalidate()
                 return
             }
             if self.countdownRemaining > 1 {
                 self.countdownRemaining -= 1
+                if self.countdownRemaining <= 3 {
+                    // 最后 3 秒发出轻柔倒数音（3、2、1）
+                    Sound.shared.tick(Double(4 - self.countdownRemaining) / 3.0, .number)
+                }
             } else {
                 self.countdownRemaining = 0
                 self.pauseCountdown()
@@ -1072,6 +1112,8 @@ final class AppModel {
                 self.cheer()
             }
         }
+        RunLoop.main.add(t, forMode: .common)
+        countdownTimer = t
     }
 
     func pauseCountdown() {
@@ -1483,6 +1525,7 @@ final class AppModel {
     /// 自测直接调它，省得等动画。
     func commitNumbers(_ final: [Int]) {
         numResults = final
+        lastNumDrawn = final
         if numNoRepeat {
             var cur = numDrawn
             for n in final where !cur.contains(n) { cur.append(n) }
@@ -1793,7 +1836,11 @@ final class AppModel {
     }
 
     func undoCurrent() {
-        if case .classroom = selection { undoPick() }
+        switch selection {
+        case .classroom: undoPick()
+        case .tool(.randomNumber): undoNumbers()
+        default: break
+        }
     }
 
     func resetCurrent() {
@@ -1889,7 +1936,8 @@ final class AppModel {
         let end = tickEnd ?? tickStart
         var lastTick = Date.distantPast
         // roll / settle 自身已持有模型引用，这里不再弱捕获，省掉多余的 guard。
-        timer = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { t in
+        // 加入 .common 模式，确保拖拽窗口、滚动侧边栏或点菜单时动画绝不卡顿掉帧
+        let t = Timer(timeInterval: 0.016, repeats: true) { t in
             let now = Date()
             if now >= deadline {
                 t.invalidate()
@@ -1904,6 +1952,8 @@ final class AppModel {
                 Sound.shared.tick(p, tool)
             }
         }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     deinit { timer?.invalidate() }
