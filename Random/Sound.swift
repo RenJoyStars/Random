@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import Foundation
 
 // MARK: - 音效
@@ -212,6 +213,15 @@ final class Sound {
     private var lastStartAttempt: Date = .distantPast
     private var previewTimer: Timer?
 
+    /// CoreAudio 系统默认输出设备监听属性与句柄
+    private var defaultOutputDeviceAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    private var coreAudioListenerBlock: AudioObjectPropertyListenerBlock?
+    private var restartWorkItem: DispatchWorkItem?
+
     /// 本轮用的鼓组（0…2），每轮开始换一套
     private var drumSet = 0
     /// 本轮的上扬音是否已经响过（每轮只响一次，别一直冲）
@@ -228,27 +238,66 @@ final class Sound {
         for _ in 0..<12 {
             let node = AVAudioPlayerNode()
             engine.attach(node)
-            engine.connect(node, to: mixer, format: format)
             players.append(node)
         }
-        engine.connect(mixer, to: engine.mainMixerNode, format: format)
+        reconnectNodes()
 
-        // 监听系统音频输出设备切换（插拔耳机、连蓝牙音箱、切换外放）。
-        // 发生切换时，系统会重置音频拓扑，必须重启 engine，否则音效全部静音。
+        // 1. 监听 CoreAudio 硬件级默认输出设备变化（投屏、AirPlay、插拔 HDMI/耳机、蓝牙切换）。
+        // 关键：即使引擎当前处于 stop 状态，只要系统切换了默认声音出口，也能感知并防抖重配。
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.scheduleDeviceReconfigure()
+        }
+        self.coreAudioListenerBlock = block
+        AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &defaultOutputDeviceAddress,
+            DispatchQueue.main,
+            block
+        )
+
+        // 2. 监听 AVAudioEngine 运行中的拓扑变更通知。
         NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
             object: engine,
             queue: .main
         ) { [weak self] _ in
-            self?.handleConfigChange()
+            self?.scheduleDeviceReconfigure()
         }
     }
 
-    private func handleConfigChange() {
+    /// 重新连接所有音频节点，确保拓扑和格式在新输出设备上完整生效
+    private func reconnectNodes() {
+        engine.disconnectNodeOutput(mixer)
+        engine.connect(mixer, to: engine.mainMixerNode, format: format)
+        for node in players {
+            engine.disconnectNodeOutput(node)
+            engine.connect(node, to: mixer, format: format)
+        }
+    }
+
+    /// 收到设备变更通知后做 0.2 秒异步防抖，避免 HDMI 握手期间多次通知引发抢跑或死锁
+    private func scheduleDeviceReconfigure() {
+        restartWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.rebuildAndRestartEngine()
+        }
+        restartWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: item)
+    }
+
+    /// 彻底平稳重置音频引擎并重新启动（支持握手延迟时的补刀重试）
+    private func rebuildAndRestartEngine(retryCount: Int = 1) {
         running = false
         if engine.isRunning { engine.stop() }
         engine.reset()
-        _ = start()
+        reconnectNodes()
+        lastStartAttempt = .distantPast
+
+        if !start() && retryCount > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.rebuildAndRestartEngine(retryCount: retryCount - 1)
+            }
+        }
     }
 
     private func applyVolume() {
@@ -372,12 +421,13 @@ final class Sound {
         if !node.isPlaying { node.play() }
     }
 
-    /// 需要时才启动引擎；失败后 2 秒内不再重试，免得每 40ms 都去撞一次墙。
+    /// 需要时启动引擎；启动失败时有 0.25 秒微冷却，避免高频 tick 撞墙，但绝不死锁设备重连
+    @discardableResult
     private func start() -> Bool {
         if running && engine.isRunning { return true }
         running = false
         let now = Date()
-        if now.timeIntervalSince(lastStartAttempt) < 2 { return false }
+        if now.timeIntervalSince(lastStartAttempt) < 0.25 { return false }
         lastStartAttempt = now
         do {
             engine.prepare()
@@ -1095,5 +1145,16 @@ final class Sound {
         return buffer
     }
 
-    deinit { previewTimer?.invalidate() }
+    deinit {
+        previewTimer?.invalidate()
+        restartWorkItem?.cancel()
+        if let block = coreAudioListenerBlock {
+            AudioObjectRemovePropertyListenerBlock(
+                AudioObjectID(kAudioObjectSystemObject),
+                &defaultOutputDeviceAddress,
+                DispatchQueue.main,
+                block
+            )
+        }
+    }
 }
