@@ -22,7 +22,7 @@ struct HistoryView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
                 SectionLabel("概览")
                 Bar {
                     HStack(spacing: 10) {
@@ -137,7 +137,7 @@ struct HistoryView: View {
 
                 Spacer(minLength: 2)
             }
-            .padding(20)
+            .macPagePadding()
         }
         .background(Color.clear)
     }

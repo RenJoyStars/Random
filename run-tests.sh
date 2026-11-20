@@ -168,7 +168,7 @@ need DesignKit.swift    "func draw(_ theme"           "特效按主题绘制"
 need DesignKit.swift    "resultPop"                   "落定时结果文字弹一下（抓住视线）"
 need SettingsView.swift "落定音风格"                   "设置页可选音效风格"
 need SettingsView.swift "落定特效"                     "设置页可选特效主题"
-need RootView.swift     "toggleProjection"            "支持投影模式（收边栏 + 全屏）"
+none RootView.swift     "toggleProjection"            "全屏按钮已移除（由 macOS 红绿灯原生接管）"
 none DesignKit.swift    "struct ConfettiParticle"     "旧版单一彩带粒子已替换"
 
 # 应用要能分发给别人，源码里就不能残留任何真实学生姓名
@@ -245,9 +245,9 @@ need AppModel.swift     "func switchClass"     "换班不跳页（走 switchClas
 
 # ── 单平台 + 无同步的防回归（2026-10-26 起只交付 macOS）──
 none_in_src() { # $1=不该出现的字面串 $2=说明
-  if grep -rqF -- "$1" "$ROOT/Random" --include="*.swift" 2>/dev/null; then
+  if grep -rqF --include="*.swift" -- "$1" "$ROOT/Random" 2>/dev/null; then
     echo "  ❌ $2"
-    grep -rnF -- "$1" "$ROOT/Random" --include="*.swift" | head -5
+    grep -rnF --include="*.swift" -- "$1" "$ROOT/Random" | head -5
     fail=1
   else
     echo "  ✅ $2"
@@ -269,7 +269,7 @@ none_in_src "size: 8.5"  "字号阶梯：不再有 8.5"
 none_in_src "size: 10.5" "字号阶梯：不再有 10.5"
 none_in_src "size: 11.5" "字号阶梯：不再有 11.5"
 none_in_src "size: 12.5" "字号阶梯：不再有 12.5"
-if grep -rqF -- "enum Type {" "$ROOT/Random" --include="*.swift"; then
+if grep -rqF --include="*.swift" -- "enum Type {" "$ROOT/Random"; then
   echo "  ✅ 字号阶梯 Type 存在"
 else
   echo "  ❌ 找不到字号阶梯 Type"

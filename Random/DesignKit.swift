@@ -48,6 +48,30 @@ struct Indexed<Value: Hashable>: Hashable, Identifiable {
     var id: Int { index }
 }
 
+// MARK: - 布局度量（macOS 27 原生规格）
+
+enum LayoutMetrics {
+    /// 页面水平边距（macOS 27 宽裕呼吸感）
+    static let pagePaddingHorizontal: CGFloat = 28
+    /// 页面垂直边距
+    static let pagePaddingVertical: CGFloat = 22
+    /// 元素纵向间距
+    static let pageSpacing: CGFloat = 18
+    /// 舞台大卡片圆角
+    static let stageCornerRadius: CGFloat = 16
+    /// 设置卡片群圆角
+    static let cardCornerRadius: CGFloat = 12
+}
+
+extension View {
+    /// 应用 macOS 27 统一页面留白与呼吸感
+    func macPagePadding() -> some View {
+        self
+            .padding(.horizontal, LayoutMetrics.pagePaddingHorizontal)
+            .padding(.vertical, LayoutMetrics.pagePaddingVertical)
+    }
+}
+
 // MARK: - 结果舞台
 
 struct StageCard<Content: View>: View {
@@ -62,22 +86,17 @@ struct StageCard<Content: View>: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, minHeight: minHeight)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 18)
-            // 内容区**不做** Liquid Glass。
-            //
-            // HIG 明确写了两条：液态玻璃只用于导航层（边栏、工具栏、浮层），
-            // 铺到内容层会把层级糊掉；而且"为强调而加的装饰背景要删掉"。
-            // 这里改用系统的 controlBackground 做一块实心卡片，
-            // 边界靠一道 0.5pt 的 separator —— macOS 的层次是"三档灰 + 细线"，
-            // 不是阴影和发光。深浅色切换时这块颜色由系统负责。
+            .padding(.horizontal, 28)
+            .padding(.vertical, 22)
+            // macOS 27 视觉语言：实心控制底色 + 连续圆角 + 柔和环境光微阴影 + 0.5pt 细线轮廓
             .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: LayoutMetrics.stageCornerRadius, style: .continuous)
                     .fill(Color.semantic(.controlBackground))
+                    .shadow(color: Color.black.opacity(0.035), radius: 10, x: 0, y: 3)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.semantic(.separator), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: LayoutMetrics.stageCornerRadius, style: .continuous)
+                    .strokeBorder(Color.semantic(.separator).opacity(0.7), lineWidth: 0.5)
             }
     }
 }
@@ -123,18 +142,20 @@ struct StageBadge<Value: Equatable>: View {
     let symbol: String
     var value: Value
     var tint: Color = .accentColor
-    /// 给 VoiceOver 念的话。不给就当装饰隐藏 ——
-    /// 否则它会念出「graduation cap」这种符号名，对盲人用户毫无意义
-    /// （这个图标的真正含义是「刚刚出了新结果」）。
     var a11yLabel: String? = nil
 
     var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundStyle(tint)
-            .symbolEffect(.bounce, value: value)
-            .accessibilityLabel(a11yLabel ?? "")
-            .accessibilityHidden(a11yLabel == nil)
+        HStack(spacing: 5) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(tint.opacity(0.12), in: Capsule())
+        .symbolEffect(.bounce, value: value)
+        .accessibilityLabel(a11yLabel ?? "")
+        .accessibilityHidden(a11yLabel == nil)
     }
 }
 
@@ -142,7 +163,7 @@ struct StageCaption: View {
     let text: String
     var body: some View {
         Text(text)
-            .font(.callout)
+            .font(.system(size: 13, weight: .regular))
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
     }
@@ -158,28 +179,22 @@ struct EmptyStage: View {
     var body: some View {
         VStack(spacing: 9) {
             Image(systemName: symbol)
-                .font(.system(size: 22, weight: .light))
+                .font(.system(size: 24, weight: .light))
                 .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)      // 纯装饰，下面的文字已经说明一切
+                .accessibilityHidden(true)
             Text(text)
-                .font(.callout)
+                .font(.system(size: 14, weight: .regular))
                 .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: 280)
+        .frame(maxWidth: 300)
         .frame(height: height)
-        // 空状态是"坑位"不是"按钮"：填一层几乎看不见的底色 + 虚线。
-        // 之前只有虚线、还是 .quaternary，投影仪上基本消失，
-        // 学生看见的就是一大片空白。
-        //
-        // 圆角 10 而不是 18：它长在圆角 12 的卡片里，
-        // 内层圆角必须比外层小一圈（同心圆角），否则内框看着比外框还圆。
         .background {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(0.035))
+            RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
+                .fill(Color.primary.opacity(0.03))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(style: StrokeStyle(lineWidth: 1.4, dash: [7, 7]))
-                        .foregroundStyle(.secondary.opacity(0.30))
+                    RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [6, 6]))
+                        .foregroundStyle(.secondary.opacity(0.25))
                 }
         }
     }
@@ -195,33 +210,18 @@ struct PrimaryButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 7) {
+            HStack(spacing: 8) {
                 Image(systemName: symbol)
                     .font(.system(size: 15, weight: .semibold))
                 Text(title)
                     .font(.system(size: 15, weight: .semibold))
             }
-            // 宽度锁在内容尺寸：macOS 没有「通栏主按钮」这种东西。
-            //
-            // 之前是 `.frame(maxWidth: .infinity)` 铺满内容区（约 1000pt），
-            // 一整条满饱和蓝横贯窗口 —— 那是 iOS 的 confirm 按钮语言，
-            // 在 Mac 上会压过页面内容，而且和系统里任何一个按钮都对不上。
-            // 现在 176pt 起跳（够「换一个颜色」五个字），随文字自然伸缩，
-            // 靠 VStack 的居中排布落在卡片下方正中间。
-            .frame(minWidth: 176)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 2)
+            .frame(minWidth: 180)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 3)
         }
-        // 主操作就用系统的 prominent 按钮。
-        //
-        // 之前自绘了一版蓝紫渐变 + 光晕投影，看着"设计感"更强，但那恰恰是
-        // 反原生的：macOS 的主按钮只由系统着色（跟随用户的强调色设置），
-        // 不自己调色。用户把强调色改成石墨/橙色时，自绘的那版就和人家的
-        // 系统控件对不上了；系统按钮会自动跟着走。
-        //
-        // 尺寸用 .large（≈28pt）而不是 .extraLarge：后者是 36pt 的大块头，
-        // 在 Mac 上只有「首次启动配置」那种引导页才用。
         .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
         .controlSize(.large)
         .disabled(disabled)
         .keyboardShortcut(.defaultAction)
@@ -341,12 +341,13 @@ struct CardGroup<Content: View>: View {
         VStack(spacing: 0.5) {
             content
         }
-        .background(Color.semantic(.separator))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color.semantic(.separator).opacity(0.8))
+        .clipShape(RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.semantic(.separator), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
+                .strokeBorder(Color.semantic(.separator).opacity(0.7), lineWidth: 0.5)
         }
+        .shadow(color: Color.black.opacity(0.02), radius: 6, x: 0, y: 2)
         .environment(\.inCardGroup, true)
     }
 }
@@ -366,21 +367,22 @@ struct Bar<Content: View>: View {
 
     var body: some View {
         content
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 16)
             // 组内行挨着排，上下留白要收一点；独立成卡时给足呼吸。
-            .padding(.vertical, grouped ? 9 : 11)
-            .frame(maxWidth: .infinity, minHeight: grouped ? nil : 44, alignment: .leading)
+            .padding(.vertical, grouped ? 11 : 13)
+            .frame(maxWidth: .infinity, minHeight: grouped ? 46 : 48, alignment: .leading)
             .background {
                 // 组内只铺实心底色，圆角和描边由 CardGroup 统一负责；
                 // 独立成卡时自己画完整的一张。
                 if grouped {
                     Color.semantic(.controlBackground)
                 } else {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
                         .fill(Color.semantic(.controlBackground))
+                        .shadow(color: Color.black.opacity(0.02), radius: 6, x: 0, y: 2)
                         .overlay {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(Color.semantic(.separator), lineWidth: 0.5)
+                            RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
+                                .strokeBorder(Color.semantic(.separator).opacity(0.7), lineWidth: 0.5)
                         }
                 }
             }
@@ -403,7 +405,7 @@ struct OptionBar<Content: View>: View {
         Bar {
             HStack(spacing: 14) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 13))
+                    Text(title).font(.system(size: 13, weight: .medium))
                     if let hint {
                         Text(hint).font(.system(size: 11)).foregroundStyle(.secondary)
                     }
@@ -427,8 +429,8 @@ struct OptionField<Content: View>: View {
 
     var body: some View {
         Bar {
-            VStack(alignment: .leading, spacing: 9) {
-                Text(title).font(.system(size: 13)).foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(.primary)
                 content
             }
         }

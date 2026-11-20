@@ -16,7 +16,7 @@ struct ClassroomView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
                 StageCard(minHeight: 190) {
                     VStack(spacing: 10) {
                         StageBadge(symbol: "graduationcap", value: model.pickResults)
@@ -192,7 +192,7 @@ struct ClassroomView: View {
 
                 Spacer(minLength: 2)
             }
-            .padding(20)
+            .macPagePadding()
         }
         .background(Color.clear)
     }

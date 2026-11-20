@@ -110,7 +110,7 @@ struct GroupingView: View {
 
                 Spacer(minLength: 2)
             }
-            .padding(20)
+            .macPagePadding()
         }
         .background(Color.clear)
     }
@@ -276,7 +276,7 @@ struct RandomNumberView: View {
 
                 Spacer(minLength: 2)
             }
-            .padding(20)
+            .macPagePadding()
         }
         .background(Color.clear)
     }
@@ -335,7 +335,7 @@ struct DiceView: View {
 
                 Spacer(minLength: 2)
             }
-            .padding(20)
+            .macPagePadding()
         }
         .background(Color.clear)
     }
@@ -412,7 +412,7 @@ struct CoinView: View {
 
                 Spacer(minLength: 2)
             }
-            .padding(20)
+            .macPagePadding()
         }
         .background(Color.clear)
     }
@@ -474,7 +474,7 @@ struct CardView: View {
 
                 Spacer(minLength: 2)
             }
-            .padding(20)
+            .macPagePadding()
         }
         .background(Color.clear)
     }
@@ -521,7 +521,7 @@ struct ColorView: View {
 
                 Spacer(minLength: 2)
             }
-            .padding(20)
+            .macPagePadding()
         }
         .background(Color.clear)
     }
@@ -576,7 +576,7 @@ struct LetterView: View {
 
                 Spacer(minLength: 2)
             }
-            .padding(20)
+            .macPagePadding()
         }
         .background(Color.clear)
     }
@@ -629,7 +629,7 @@ struct RPSView: View {
 
                 Spacer(minLength: 2)
             }
-            .padding(20)
+            .macPagePadding()
         }
         .background(Color.clear)
     }
@@ -693,7 +693,7 @@ struct YesNoView: View {
 
                 Spacer(minLength: 2)
             }
-            .padding(20)
+            .macPagePadding()
         }
         .background(Color.clear)
     }
@@ -794,7 +794,7 @@ struct SequenceView: View {
                     }
                 }
             }
-            .padding(20)
+            .macPagePadding()
         }
     }
 
@@ -816,9 +816,17 @@ struct GroupPickView: View {
         model.groupPickResults.joined(separator: "  ·  ")
     }
 
+    private var actionButtonTitle: String {
+        if model.groupPickMode == 0 {
+            return model.groupPickCount > 1 ? "抽 \(model.groupPickCount) 组" : "抽一组"
+        } else {
+            return model.groupPickCount > 1 ? "抽 \(model.groupPickCount) 个声部" : "抽声部"
+        }
+    }
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
                 StageCard(minHeight: 180) {
                     VStack(spacing: 10) {
                         StageBadge(symbol: "person.3.fill", value: model.groupPickResults)
@@ -828,7 +836,7 @@ struct GroupPickView: View {
                             EmptyStage(text: "待抽取小组或声部", symbol: "person.3.sequence", height: 100)
                         } else {
                             RollingNumber(text: display,
-                                          size: (model.groupPickResults.count > 1 ? 52 : 72) * model.effectiveStageScale)
+                                          size: (model.groupPickResults.count > 1 ? (model.groupPickMode > 0 ? 42 : 52) : (model.groupPickMode > 0 ? 58 : 72)) * model.effectiveStageScale)
                                 .resultPop(model.celebration)
                         }
 
@@ -841,7 +849,7 @@ struct GroupPickView: View {
 
                 HStack {
                     Spacer()
-                    PrimaryButton(title: model.groupPickCount > 1 ? "抽 \(model.groupPickCount) 组" : "抽一组",
+                    PrimaryButton(title: actionButtonTitle,
                                   symbol: "person.3.fill",
                                   disabled: model.groupPickRolling) {
                         model.drawGroupPick()
@@ -854,9 +862,9 @@ struct GroupPickView: View {
                 CardGroup {
                     OptionField("抽取模式") {
                         Picker("", selection: model.binding(\.groupPickMode)) {
-                            Text("组别 (1..N 组)").tag(0)
-                            Text("四部合唱 (S/A/T/B)").tag(1)
-                            Text("二部合唱 (高/低声部)").tag(2)
+                            Text("普通组别").tag(0)
+                            Text("四部合唱").tag(1)
+                            Text("二部合唱").tag(2)
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
@@ -868,8 +876,11 @@ struct GroupPickView: View {
                         }
                     }
 
-                    OptionBar("每次抽取", hint: "同时抽出几个组") {
-                        NumberField(value: model.binding(\.groupPickCount), suffix: "组", range: 1...4)
+                    OptionBar(model.groupPickMode == 0 ? "每次抽取" : "抽取数量",
+                              hint: model.groupPickMode == 0 ? "同时抽出几个组" : "同时抽出几个声部") {
+                        NumberField(value: model.binding(\.groupPickCount),
+                                    suffix: model.groupPickMode == 0 ? "组" : "个",
+                                    range: 1...4)
                     }
                 }
 
@@ -881,13 +892,15 @@ struct GroupPickView: View {
                     }
 
                     Bar {
-                        FlowGrid(items: model.groupPickHistory, spacing: 7, minimum: 110) { item in
+                        FlowGrid(items: model.groupPickHistory, spacing: 8, minimum: 140) { item in
                             HStack(spacing: 6) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(Color.accentColor)
                                     .font(.system(size: 11))
                                 Text(item)
                                     .font(.system(size: 13, weight: .medium))
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
                                     .foregroundStyle(.primary)
                             }
                             .padding(.horizontal, 10)
@@ -901,7 +914,7 @@ struct GroupPickView: View {
 
                 Spacer(minLength: 2)
             }
-            .padding(20)
+            .macPagePadding()
         }
         .background(Color.clear)
     }
@@ -1016,7 +1029,7 @@ struct CountdownView: View {
 
                 Spacer(minLength: 2)
             }
-            .padding(20)
+            .macPagePadding()
         }
         .background(Color.clear)
     }

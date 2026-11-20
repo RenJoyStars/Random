@@ -20,10 +20,6 @@ struct RootView: View {
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
 
-    /// 宿主窗口（SwiftUI 不给，只能靠 Platform.swift 里的 `WindowAccessor` 反查）。
-    /// 只给「投影模式」切全屏用。
-    @State private var hostWindow: NSWindow?
-
     /// 侧边栏搜索。18 个班的名单一路排下来，没有搜索就只能靠滚。
     /// 只影响侧边栏显示，不写进 UserDefaults。
     @State private var query = ""
@@ -55,7 +51,6 @@ struct RootView: View {
         ))
         // 直接把 .randomroster / .json 名单文件拖进窗口即可导入
         .onDrop(of: [.fileURL], isTargeted: nil) { handleDrop($0) }
-        .background(WindowAccessor { hostWindow = $0 })
         // 单向跟随窗口宽度：窄了自动收起边栏，宽了**什么都不做**。
         // 老师的需求很明确 —— 拉宽时不要自己把边栏弹出来，要手动点工具栏按钮。
         // 所以这里只有 if，没有 else：绝不把 columnVisibility 写回 .all。
@@ -76,17 +71,6 @@ struct RootView: View {
         if force || !expandedGrades.contains(key) {
             withAnimation(.snappy(duration: 0.2)) { expandedGrades = [key] }
         }
-    }
-
-    /// 投影模式：收起边栏 + 进全屏，把舞台铺满教室大屏。再点一次退出。
-    ///
-    /// 为什么不做成"只隐藏边栏"：老师投影时真正想要的是**字大、没有多余边框**，
-    /// 光收边栏窗口还是原来那么大，字并不会变大。整窗全屏才有效果。
-    private func toggleProjection() {
-        guard let window = hostWindow else { return }
-        let goingFullScreen = !window.styleMask.contains(.fullScreen)
-        columnVisibility = goingFullScreen ? .detailOnly : .automatic
-        window.toggleFullScreen(nil)
     }
 
     // MARK: 名单导入（Mac）
@@ -319,7 +303,7 @@ struct RootView: View {
             // 选中态就是系统强调色实心块 —— 和 Finder / 备忘录一致。
             // （做过一版蓝紫渐变，好看但不原生：系统 app 的选中色是跟着
             //  用户在"系统设置 → 外观"里选的强调色走的，不能自己定。）
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(selected ? Color.accentColor : Color.clear)
         }
         .padding(.leading, indent ? 13 : 0)
@@ -456,13 +440,6 @@ struct RootView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
-            Button {
-                toggleProjection()
-            } label: {
-                Label("投影模式", systemImage: "rectangle.expand.vertical")
-            }
-            .help("收起边栏并铺满屏幕，投影到教室大屏时用；再点一次退出")
-
             Button {
                 importRosterViaPanel()
             } label: {
