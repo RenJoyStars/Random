@@ -210,7 +210,7 @@ struct ClassroomView: View {
                             Text("还没有名单").font(.caption).foregroundStyle(.tertiary)
                         } else {
                             FlowGrid(items: model.leastPicked(of: model.classID, limit: 6),
-                                     spacing: 7, minimum: 112) { stat in
+                                     spacing: 8, minimum: 136) { stat in
                                 PickStatChip(no: model.showStudentNumber ? model.fmtNo(stat.no) : "",
                                              name: stat.name,
                                              count: stat.count)
@@ -243,7 +243,10 @@ private struct PickStatChip: View {
             Text(name)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
+                .truncationMode(.tail)
+
             Spacer(minLength: 4)
+
             if count == 0 {
                 Text("没点过")
                     .font(.system(size: Type.caption, weight: .semibold))
@@ -251,14 +254,17 @@ private struct PickStatChip: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(Color.orange.opacity(0.12), in: Capsule())
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
             } else {
                 Text("\(count) 次")
                     .font(.system(size: Type.caption))
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
             }
         }
         .font(.system(size: 13))
-        .lineLimit(1)
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)

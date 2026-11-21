@@ -59,13 +59,17 @@ struct RootView: View {
             guard columnVisibility != .detailOnly else { return }
             withAnimation(.snappy(duration: 0.2)) { columnVisibility = .detailOnly }
         })
-        .onAppear { focusGrade(force: true) }
+        .onAppear {
+            // 冷启动默认进入选班大厅，所有年级默认保持收起状态
+            if case .classroom = model.selection { focusGrade(force: true) }
+        }
         .onChange(of: model.classID) { _, _ in focusGrade() }
         .onChange(of: model.activeClasses.count) { _, _ in focusGrade(force: true) }
     }
 
-    /// 只保留「当前年级展开」。
+    /// 仅在进入具体班级时展开该班所在的年级
     private func focusGrade(force: Bool = false) {
+        guard case .classroom = model.selection else { return }
         guard let g = model.currentGrade else { return }
         let key = "g\(g.rawValue)"
         if force || !expandedGrades.contains(key) {
@@ -243,11 +247,7 @@ struct RootView: View {
 
                 Text(group.title)
                     .font(.system(size: 11, weight: .semibold))
-                    // 当前年级用主色而不是强调色。
-                    // 系统侧边栏的小标题一律是灰字，染色标题在原生 app 里没有先例；
-                    // 但完全同色又分不出"我正在教的那届"，所以仅把主/次拉开一档。
-                    .foregroundStyle(group.grade == model.currentGrade
-                                     ? Color.primary : Color.secondary)
+                    .foregroundStyle(Color.secondary)
 
                 Spacer(minLength: 0)
             }
