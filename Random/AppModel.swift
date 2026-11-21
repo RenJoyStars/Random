@@ -5,6 +5,7 @@ import Observation
 // 班级按班拆成若干独立入口（来自导入的名单），随机工具并列另一组。
 
 enum SidebarItem: Hashable, Identifiable {
+    case welcome             // 选班大厅 / 课堂就绪
     case classroom(String)   // 班号，如 "2601"
     case tool(Tool)
     case history             // 统一时间线：点名 / 分组 / 各工具
@@ -12,6 +13,7 @@ enum SidebarItem: Hashable, Identifiable {
 
     var id: String {
         switch self {
+        case .welcome:          return "welcome"
         case .classroom(let c): return "class-\(c)"
         case .tool(let t):      return "tool-\(t.rawValue)"
         case .history:          return "history"
@@ -372,9 +374,8 @@ final class AppModel {
 
     // MARK: 导航
 
-    /// 默认落在「班级」分组上。还没导入名单时 classID 是空串，
-    /// 界面据此显示「先导入名单」的空状态（见 RootView 的 NoRosterView）。
-    var selection: SidebarItem = .classroom("") {
+    /// 默认进入「选班大厅」，由老师按需手动选班，避免冷启动直接绑定某班级。
+    var selection: SidebarItem = .welcome {
         didSet {
             if case .classroom(let c) = selection { classID = c }
             pickResults = []
@@ -1194,9 +1195,9 @@ final class AppModel {
         }
         if let v = d["selection"] as? String {
             if v.hasPrefix("class-") {
-                // 上次待的班可能已经不在名单里（换过名单 / 名单被移除），那就退回当前班
-                let id = String(v.dropFirst(6))
-                selection = .classroom(activeClasses.contains { $0.id == id } ? id : classID)
+                // 上次待的班可能已经不在名单里（换过名单 / 名单被移除）
+                // 任老师要求：冷启动不再默认进入某个具体班级，而是回到选班大厅由老师手动选班
+                selection = .welcome
             } else if v.hasPrefix("tool-"),
                       let t = Tool(rawValue: String(v.dropFirst(5))) {
                 selection = .tool(t)
@@ -1204,7 +1205,11 @@ final class AppModel {
                 selection = .settings
             } else if v == "history" {
                 selection = .history
+            } else {
+                selection = .welcome
             }
+        } else {
+            selection = .welcome
         }
         if let v = d["padZero"] as? Bool { padZero = v }
         if let v = d["noRepeat"] as? Bool { noRepeat = v }
@@ -1804,7 +1809,10 @@ final class AppModel {
 
     func step(_ delta: Int) {
         let all = allSidebarItems
-        guard let i = all.firstIndex(of: selection) else { return }
+        guard let i = all.firstIndex(of: selection) else {
+            if let first = all.first { selection = first }
+            return
+        }
         let n = all.count
         selection = all[((i + delta) % n + n) % n]
     }
@@ -1817,7 +1825,8 @@ final class AppModel {
 
     func performPrimaryAction() {
         switch selection {
-        case .classroom:          drawPick()
+        case .welcome:                  break
+        case .classroom:                drawPick()
         case .tool(.grouping):          drawGroups()
         case .tool(.sequence):          drawSequence()
         case .tool(.groupPick):         drawGroupPick()
@@ -1845,6 +1854,7 @@ final class AppModel {
 
     func resetCurrent() {
         switch selection {
+        case .welcome:                  break
         case .classroom:                resetPick()
         case .tool(.grouping):          resetGroups()
         case .tool(.sequence):          sequenceResult = []
@@ -1866,6 +1876,7 @@ final class AppModel {
     /// 是否有可清空的记录（决定工具栏按钮是否可用）
     var hasRecords: Bool {
         switch selection {
+        case .welcome:                  return false
         case .classroom:                return !drawn.isEmpty
         case .tool(.grouping):          return !groups.isEmpty
         case .tool(.sequence):          return !sequenceResult.isEmpty
@@ -1886,6 +1897,7 @@ final class AppModel {
 
     var isRolling: Bool {
         switch selection {
+        case .welcome:                  return false
         case .classroom:                return pickRolling
         case .tool(.grouping):          return groupingRolling
         case .tool(.sequence):          return sequenceRolling
@@ -1906,6 +1918,7 @@ final class AppModel {
 
     var actionTitle: String {
         switch selection {
+        case .welcome:     return "选班大厅"
         case .classroom:   return "点名"
         case .tool(let t): return t.actionTitle
         case .history:     return "历史记录"

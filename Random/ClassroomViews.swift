@@ -14,6 +14,32 @@ struct ClassroomView: View {
 
     private var multi: Bool { model.pickResults.count > 1 }
 
+    /// 舞台未开抽时的状态提示：
+    /// 区分「真未点过（还未开始点名）」与「此前已点过（点击下方按钮开始点名）」，以及「本轮已全员点毕」
+    private var emptyStageContent: (title: String, subtitle: String, symbol: String) {
+        let drawn = model.drawnCount(of: model.classID)
+        let total = model.classCount
+        if drawn == 0 {
+            return (
+                title: "还未开始点名",
+                subtitle: "按下方「点名」或快捷键 ⌘↩ 开始",
+                symbol: "hand.wave"
+            )
+        } else if model.noRepeat && drawn >= total && total > 0 {
+            return (
+                title: "本轮全员已点毕",
+                subtitle: "可点击下方清空或关闭不重复重新开始",
+                symbol: "checkmark.circle.fill"
+            )
+        } else {
+            return (
+                title: "点击下方按钮开始点名",
+                subtitle: "本轮已点 \(drawn) 人 · 剩余 \(model.pickRemaining) 人待抽",
+                symbol: "play.circle"
+            )
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: LayoutMetrics.pageSpacing) {
@@ -22,7 +48,10 @@ struct ClassroomView: View {
                         StageBadge(symbol: "graduationcap", value: model.pickResults)
 
                         if model.pickResults.isEmpty {
-                            EmptyStage(text: "还没有点过名", symbol: "hand.wave",
+                            let empty = emptyStageContent
+                            EmptyStage(text: empty.title,
+                                       subtitle: empty.subtitle,
+                                       symbol: empty.symbol,
                                        height: 104)
                         } else if model.pickResults.count >= 5 {
                             // 5~10 人群抽：自动转为多卡片大字网格，避免长文本被系统截断成省略号

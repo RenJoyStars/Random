@@ -124,6 +124,15 @@ struct RootView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     if model.hasClasses {
+                        if query.isEmpty {
+                            sideRow(title: "选班大厅", symbol: "square.grid.2x2",
+                                    selected: model.selection == .welcome) {
+                                withAnimation(.snappy(duration: 0.18)) {
+                                    model.selection = .welcome
+                                }
+                            }
+                        }
+
                         // 按年级分组，只展开当前班所在的那组（见 expandedGrades）。
                         ForEach(filteredGroups) { group in
                             gradeHeader(group)
@@ -380,6 +389,8 @@ struct RootView: View {
     @ViewBuilder
     private func detailView(for item: SidebarItem) -> some View {
         switch item {
+        case .welcome:
+            if model.hasClasses { WelcomeView() } else { NoRosterView() }
         case .classroom:
             // 还没导入名单时，班级页显示引导（随机工具不受影响，照样能用）
             if model.hasClasses { ClassroomView() } else { NoRosterView() }
@@ -414,6 +425,7 @@ struct RootView: View {
 
     private func title(for item: SidebarItem) -> String {
         switch item {
+        case .welcome:           return "选班大厅"
         case .classroom(let id): return model.hasClasses ? model.title(of: id) : "班级"
         case .tool(let t):       return t.title
         case .history:           return "历史记录"
@@ -423,6 +435,9 @@ struct RootView: View {
 
     private func subtitle(for item: SidebarItem) -> String {
         switch item {
+        case .welcome:
+            guard model.hasClasses else { return "尚未导入名单" }
+            return "\(model.activeClasses.count) 个班级就绪 · 点击进入上课"
         case .classroom(let id):
             guard model.hasClasses else { return "尚未导入名单" }
             return "\(model.names(of: id).count) 人 · 已抽 \(model.drawnCount(of: id))"
@@ -575,5 +590,255 @@ struct CollapsibleRows<Content: View>: View {
             .frame(height: expanded ? (fullHeight > 0 ? fullHeight : nil) : 0,
                    alignment: .top)
             .clipped()
+    }
+}
+
+// MARK: - 选班大厅（课堂就绪）
+
+struct WelcomeView: View {
+    @Environment(AppModel.self) private var model
+
+    private var totalStudents: Int {
+        model.activeClasses.reduce(0) { $0 + $1.names.count }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
+                heroStage
+
+                classesSection
+
+                quickToolsSection
+
+                footerInfo
+            }
+            .macPagePadding()
+            .frame(maxWidth: 880)
+        }
+    }
+
+    // MARK: 顶部就绪舞台
+
+    private var heroStage: some View {
+        StageCard(minHeight: 130) {
+            VStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                    Text("课堂就绪 · CLASS READY")
+                        .font(.system(size: Type.caption, weight: .bold))
+                        .tracking(0.8)
+                        .foregroundStyle(Color.accentColor)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Color.accentColor.opacity(0.12), in: Capsule())
+
+                Text("今天上哪个班？")
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundStyle(Color.primary)
+
+                Text("点击下方班级卡片立即进入点名；亦可通过工具直达课堂互动活动")
+                    .font(.system(size: Type.body))
+                    .foregroundStyle(Color.secondary)
+            }
+            .padding(.vertical, 12)
+        }
+    }
+
+    // MARK: 班级网格
+
+    private var classesSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(model.gradeGroups) { group in
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(group.title)
+                            .font(.system(size: Type.title, weight: .semibold))
+                            .foregroundStyle(Color.primary)
+                        Text("\(group.classes.count) 个班")
+                            .font(.system(size: Type.caption))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 300), spacing: 14)], spacing: 14) {
+                        ForEach(group.classes) { cls in
+                            ClassTileCard(cls: cls)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: 课堂常用工具
+
+    private var quickToolsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("课堂常用工具")
+                    .font(.system(size: Type.title, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                Spacer()
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 180, maximum: 260), spacing: 12)], spacing: 12) {
+                quickToolTile(tool: .grouping, subtitle: "全班随机拆分小组")
+                quickToolTile(tool: .groupPick, subtitle: "抽取小组或二/四部合唱")
+                quickToolTile(tool: .countdown, subtitle: "课堂互动与答题倒计时")
+                quickToolTile(tool: .sequence, subtitle: "全班乱序出场表演")
+            }
+        }
+    }
+
+    private func quickToolTile(tool: Tool, subtitle: String) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.18)) {
+                model.selection = .tool(tool)
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: tool.symbol)
+                    .font(.system(size: 18))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 36, height: 36)
+                    .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tool.title)
+                        .font(.system(size: Type.body, weight: .medium))
+                        .foregroundStyle(Color.primary)
+                    Text(subtitle)
+                        .font(.system(size: Type.caption))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.8)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: 底部信息
+
+    private var footerInfo: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.seal")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Text("当前名单：\(model.importedRosterName ?? "已导入名单") · \(model.activeClasses.count) 个班级 · 共计 \(totalStudents) 人")
+                .font(.system(size: Type.caption))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 4)
+    }
+}
+
+// MARK: - 班级磁贴卡片
+
+struct ClassTileCard: View {
+    @Environment(AppModel.self) private var model
+    let cls: ClassRoster.SchoolClass
+    @State private var isHovered = false
+
+    private var drawn: Int { model.drawnCount(of: cls.id) }
+    private var total: Int { model.names(of: cls.id).count }
+    private var progress: Double { total > 0 ? Double(drawn) / Double(total) : 0 }
+
+    var body: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.18)) {
+                model.selection = .classroom(cls.id)
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center) {
+                    Text(cls.shortTitle)
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(Color.primary)
+                    Spacer()
+                    statusBadge
+                }
+
+                Text(cls.title)
+                    .font(.system(size: Type.footnote))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                // 进度条与数字
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(drawn > 0 ? "已抽 \(drawn) 人" : "待开抽")
+                            .font(.system(size: Type.caption, weight: .medium))
+                            .foregroundStyle(drawn > 0 ? Color.accentColor : Color.secondary)
+                        Spacer()
+                        Text("共 \(total) 人")
+                            .font(.system(size: Type.caption))
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.primary.opacity(0.06))
+                                .frame(height: 5)
+                            Capsule()
+                                .fill(drawn >= total && total > 0 ? Color.green : Color.accentColor)
+                                .frame(width: geo.size.width * CGFloat(min(1.0, max(0.0, progress))), height: 5)
+                        }
+                    }
+                    .frame(height: 5)
+                }
+            }
+            .padding(14)
+            .background {
+                RoundedRectangle(cornerRadius: LayoutMetrics.stageCornerRadius, style: .continuous)
+                    .fill(isHovered ? Color.primary.opacity(0.06) : Color.primary.opacity(0.03))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: LayoutMetrics.stageCornerRadius, style: .continuous)
+                            .strokeBorder(isHovered ? Color.accentColor.opacity(0.4) : Color.primary.opacity(0.08),
+                                         lineWidth: isHovered ? 1.2 : 0.8)
+                    }
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+
+    @ViewBuilder
+    private var statusBadge: some View {
+        if drawn == 0 {
+            Text("待开抽")
+                .font(.system(size: Type.caption, weight: .medium))
+                .foregroundStyle(Color.secondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(Color.primary.opacity(0.06), in: Capsule())
+        } else if drawn >= total && total > 0 {
+            Text("已点毕")
+                .font(.system(size: Type.caption, weight: .medium))
+                .foregroundStyle(Color.green)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(Color.green.opacity(0.12), in: Capsule())
+        } else {
+            Text("已抽 \(Int(progress * 100))%")
+                .font(.system(size: Type.caption, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(Color.accentColor.opacity(0.12), in: Capsule())
+        }
     }
 }

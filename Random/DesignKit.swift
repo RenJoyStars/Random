@@ -173,20 +173,26 @@ struct StageCaption: View {
 
 struct EmptyStage: View {
     var text: String = "待抽取"
+    var subtitle: String? = nil
     var symbol: String = "sparkles"
     var height: CGFloat = 110
 
     var body: some View {
-        VStack(spacing: 9) {
+        VStack(spacing: 6) {
             Image(systemName: symbol)
                 .font(.system(size: 24, weight: .light))
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
             Text(text)
-                .font(.system(size: 14, weight: .regular))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
         }
-        .frame(maxWidth: 300)
+        .frame(maxWidth: 320)
         .frame(height: height)
         .background {
             RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)

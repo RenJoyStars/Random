@@ -118,7 +118,7 @@ check(m2.drawnCount(of: "2603") == 4,
       "新实例读回 2603 的 4 条记录（实际 \(m2.drawnCount(of: "2603"))）")
 check(m2.drawnByClass["2603"]?.sorted() == [11, 22, 33, 44], "内容一致")
 check(m2.classID == "2603", "记住了上次所在班级（实际 \(m2.classID)）")
-check(m2.selection == .classroom("2603"), "记住了上次所在栏目")
+check(m2.selection == .welcome, "启动时不默认进入具体班级，而是回到选班大厅（实际 \(m2.selection)）")
 m.selection = .tool(.dice)
 m.persist()
 let m3 = newModel()
