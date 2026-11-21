@@ -75,28 +75,53 @@ extension View {
 // MARK: - 结果舞台
 
 struct StageCard<Content: View>: View {
+    @Environment(\.colorScheme) private var scheme
     var minHeight: CGFloat = 200
+    var ambientTint: Color? = nil
     let content: Content
 
-    init(minHeight: CGFloat = 200, @ViewBuilder content: () -> Content) {
+    init(minHeight: CGFloat = 200, ambientTint: Color? = nil, @ViewBuilder content: () -> Content) {
         self.minHeight = minHeight
+        self.ambientTint = ambientTint
         self.content = content()
     }
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: LayoutMetrics.stageCornerRadius, style: .continuous)
         content
             .frame(maxWidth: .infinity, minHeight: minHeight)
             .padding(.horizontal, 28)
             .padding(.vertical, 22)
-            // macOS 27 视觉语言：实心控制底色 + 连续圆角 + 柔和环境光微阴影 + 0.5pt 细线轮廓
+            // macOS 原生材质层级：实心控制底色 + 深浅色自适应微阴影 + 顶部 0.5pt 镜面高光边线
             .background {
-                RoundedRectangle(cornerRadius: LayoutMetrics.stageCornerRadius, style: .continuous)
-                    .fill(Color.semantic(.controlBackground))
-                    .shadow(color: Color.black.opacity(0.035), radius: 10, x: 0, y: 3)
+                ZStack {
+                    shape
+                        .fill(Color.semantic(.controlBackground))
+                        .shadow(color: Color.black.opacity(scheme == .dark ? 0.24 : 0.045),
+                                radius: scheme == .dark ? 14 : 10, x: 0, y: 3)
+                    if let tint = ambientTint {
+                        shape
+                            .fill(RadialGradient(
+                                colors: [tint.opacity(scheme == .dark ? 0.09 : 0.05), .clear],
+                                center: .top,
+                                startRadius: 10,
+                                endRadius: 280
+                            ))
+                    }
+                }
             }
             .overlay {
-                RoundedRectangle(cornerRadius: LayoutMetrics.stageCornerRadius, style: .continuous)
-                    .strokeBorder(Color.semantic(.separator).opacity(0.7), lineWidth: 0.5)
+                shape.strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(scheme == .dark ? 0.11 : 0.70),
+                            Color.semantic(.separator).opacity(scheme == .dark ? 0.65 : 0.75)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 0.5
+                )
             }
     }
 }
@@ -214,23 +239,52 @@ struct PrimaryButton: View {
     var disabled: Bool = false
     let action: () -> Void
 
+    @State private var hovering = false
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: symbol)
                     .font(.system(size: 15, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace))
                 Text(title)
                     .font(.system(size: 15, weight: .semibold))
             }
-            .frame(minWidth: 180)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 3)
+            .frame(minWidth: 184)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 4)
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.capsule)
         .controlSize(.large)
+        .scaleEffect(hovering && !disabled ? 1.018 : 1.0)
+        .animation(.snappy(duration: 0.16), value: hovering)
+        .onHover { hovering = $0 }
         .disabled(disabled)
         .keyboardShortcut(.defaultAction)
+    }
+}
+
+/// 细长胶囊进度条：用于点名本轮进度、课堂倒计时与选班大厅卡片。
+struct ThinProgressBar: View {
+    let progress: Double
+    var tint: Color = .accentColor
+    var height: CGFloat = 5
+
+    private var clamped: Double { min(1.0, max(0.0, progress)) }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(0.07))
+                Capsule()
+                    .fill(tint)
+                    .frame(width: geo.size.width * CGFloat(clamped))
+                    .animation(.snappy(duration: 0.25), value: clamped)
+            }
+        }
+        .frame(height: height)
     }
 }
 
@@ -337,6 +391,7 @@ extension EnvironmentValues {
 }
 
 struct CardGroup<Content: View>: View {
+    @Environment(\.colorScheme) private var scheme
     let content: Content
 
     init(@ViewBuilder content: () -> Content) {
@@ -344,16 +399,26 @@ struct CardGroup<Content: View>: View {
     }
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
         VStack(spacing: 0.5) {
             content
         }
-        .background(Color.semantic(.separator).opacity(0.8))
-        .clipShape(RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous))
+        .background(Color.semantic(.separator).opacity(0.75))
+        .clipShape(shape)
         .overlay {
-            RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
-                .strokeBorder(Color.semantic(.separator).opacity(0.7), lineWidth: 0.5)
+            shape.strokeBorder(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(scheme == .dark ? 0.09 : 0.60),
+                        Color.semantic(.separator).opacity(0.7)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                lineWidth: 0.5
+            )
         }
-        .shadow(color: Color.black.opacity(0.02), radius: 6, x: 0, y: 2)
+        .shadow(color: Color.black.opacity(scheme == .dark ? 0.16 : 0.025), radius: 6, x: 0, y: 2)
         .environment(\.inCardGroup, true)
     }
 }
@@ -364,6 +429,7 @@ struct CardGroup<Content: View>: View {
 
 struct Bar<Content: View>: View {
     @Environment(\.inCardGroup) private var grouped
+    @Environment(\.colorScheme) private var scheme
 
     let content: Content
 
@@ -372,6 +438,7 @@ struct Bar<Content: View>: View {
     }
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
         content
             .padding(.horizontal, 16)
             // 组内行挨着排，上下留白要收一点；独立成卡时给足呼吸。
@@ -383,12 +450,21 @@ struct Bar<Content: View>: View {
                 if grouped {
                     Color.semantic(.controlBackground)
                 } else {
-                    RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
+                    shape
                         .fill(Color.semantic(.controlBackground))
-                        .shadow(color: Color.black.opacity(0.02), radius: 6, x: 0, y: 2)
+                        .shadow(color: Color.black.opacity(scheme == .dark ? 0.16 : 0.025), radius: 6, x: 0, y: 2)
                         .overlay {
-                            RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
-                                .strokeBorder(Color.semantic(.separator).opacity(0.7), lineWidth: 0.5)
+                            shape.strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(scheme == .dark ? 0.09 : 0.60),
+                                        Color.semantic(.separator).opacity(0.7)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: 0.5
+                            )
                         }
                 }
             }

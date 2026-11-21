@@ -377,6 +377,7 @@ final class AppModel {
     /// 默认进入「选班大厅」，由老师按需手动选班，避免冷启动直接绑定某班级。
     var selection: SidebarItem = .welcome {
         didSet {
+            if oldValue != selection { cancelActiveRoll() }
             if case .classroom(let c) = selection { classID = c }
             pickResults = []
             lastDrawn = []
@@ -496,6 +497,7 @@ final class AppModel {
     /// 否则屏幕上会挂着一份「上一个班的第 1 位是某某」，而这个名字根本不在当前班里。
     func switchClass(_ id: String) {
         guard activeClasses.contains(where: { $0.id == id }) else { return }
+        cancelActiveRoll()
         classID = id
         groups = []
         sequenceResult = []
@@ -508,15 +510,15 @@ final class AppModel {
 
     // MARK: 班级（每班独立记录）
 
-    var padZero: Bool = true
-    var noRepeat: Bool = true
+    var padZero: Bool = true { didSet { persist() } }
+    var noRepeat: Bool = true { didSet { persist() } }
     /// 公平点名：加权无放回抽样，历史被点次数越少的同学权重越高
-    var fairPick: Bool = true
+    var fairPick: Bool = true { didSet { persist() } }
     /// 是否展示学号（默认 false：音乐课以姓名为准，避免插班生 60/61 号断号带来困扰）
-    var showStudentNumber: Bool = false
+    var showStudentNumber: Bool = false { didSet { persist() } }
 
     /// 每次点名同时抽几个人
-    var pickCount: Int = 1
+    var pickCount: Int = 1 { didSet { persist() } }
     var effectivePickCount: Int { min(max(1, pickCount), 10) }
 
     /// 音效开关（默认开）。关掉后连音频引擎都不会被创建。
@@ -726,6 +728,25 @@ final class AppModel {
         return "有请 \(nos) 号同学"
     }
 
+    /// 公平点名透出文案：学生质疑「怎么又点到我」时，舞台可直接展示本学期被点次数。
+    func fairPickBadge(for numbers: [Int]) -> String? {
+        guard fairPick, !numbers.isEmpty, !pickRolling else { return nil }
+        let counts = pickCounts(of: classID)
+        if numbers.count == 1, let first = numbers.first {
+            let c = counts[first] ?? 0
+            return c <= 1 ? "公平加权 · 本学期首次" : "公平加权 · 本学期第 \(c) 次"
+        }
+        let minC = numbers.map { counts[$0] ?? 0 }.min() ?? 0
+        return minC <= 1 ? "公平加权 · 含首次被点" : "公平加权已生效"
+    }
+
+    /// 请假/跳过一键重抽：撤销刚刚抽中的同学并立刻补抽，不污染历史与公平统计。
+    func skipAndRedraw() {
+        guard !pickRolling, !lastDrawn.isEmpty else { return }
+        undoPick()
+        drawPick()
+    }
+
     func drawPick() {
         guard !pickRolling else { return }
         guard hasClasses else {
@@ -743,18 +764,23 @@ final class AppModel {
         let take = min(want, pool.count)
         let final = (fairPick ? weightedSample(pool, take) : sample(pool, take)).sorted()
         let hi = max(1, classCount)
+        let targetClassID = classID
 
         pickRolling = true
         finishAfter(2.0, tick: 0.118, tickEnd: 0.042, sound: .pick, roll: {
             self.pickResults = self.sample(Array(1...hi), min(take, hi)).sorted()
         }, settle: {
+            guard self.classID == targetClassID else {
+                self.pickRolling = false
+                return
+            }
             Sound.shared.victory()
             self.pickRolling = false
             self.pickResults = final
             if self.noRepeat {
-                var cur = self.drawnByClass[self.classID] ?? []
+                var cur = self.drawnByClass[targetClassID] ?? []
                 for n in final where !cur.contains(n) { cur.append(n) }
-                self.drawnByClass[self.classID] = cur
+                self.drawnByClass[targetClassID] = cur
                 self.lastDrawn = final
             }
             var msg = self.announcement(for: final)
@@ -766,20 +792,21 @@ final class AppModel {
             // 历史时间线。存学号（统计用）+ 当时看到的文案（回看用）。
             let names = final.compactMap { self.name(no: $0) }
             let nums = final.map { self.fmtNo($0) }.joined(separator: "、")
-            self.logHistory(kind: HistoryKind.pick, classID: self.classID,
+            self.logHistory(kind: HistoryKind.pick, classID: targetClassID,
                             numbers: final,
                             text: names.isEmpty ? nums : "\(nums) \(names.joined(separator: "、"))")
 
             // 念出姓名。等钟声落下去一点再开口，不然和钟声叠在一起听不清。
-            let picked = names
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                Speech.shared.announce(picked)
-            }
+            self.speechWorkItem?.cancel()
+            let item = DispatchWorkItem { Speech.shared.announce(names) }
+            self.speechWorkItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: item)
         })
     }
 
     func undoPick() {
         guard !lastDrawn.isEmpty else { return }
+        speechWorkItem?.cancel()
         let undid = lastDrawn
         var cur = drawnByClass[classID] ?? []
         cur.removeAll { undid.contains($0) }
@@ -915,11 +942,11 @@ final class AppModel {
 
     // MARK: 随机数字
 
-    var numMin: Int = 1
-    var numMax: Int = 100
-    var numCount: Int = 1
+    var numMin: Int = 1 { didSet { persist() } }
+    var numMax: Int = 100 { didSet { persist() } }
+    var numCount: Int = 1 { didSet { persist() } }
     /// 同一批里不出现重复号码（抽 5 个就是 5 个不同的数）。
-    var numUnique: Bool = true
+    var numUnique: Bool = true { didSet { persist() } }
 
     /// **跨批次**不重复：抽过的号码，本轮不再抽。
     ///
@@ -927,7 +954,7 @@ final class AppModel {
     /// 完全没有跨次记忆 —— 老师拿它当「1–49 抽学号」用时，抽过的号码下一次照样会中，
     /// 连续抽十几次几乎必然撞人。课上一旦撞了就得重抽，观感很差。
     /// 默认开启：这个工具在教学里主要就是当抽号器用；想真随机（掷数游戏）再关掉。
-    var numNoRepeat: Bool = true
+    var numNoRepeat: Bool = true { didSet { persist() } }
 
     /// 本轮已抽过的号码（`numNoRepeat` 的池子）
     var numDrawn: [Int] = []
@@ -983,8 +1010,8 @@ final class AppModel {
 
     // MARK: 骰子
 
-    var diceCount: Int = 2
-    var diceFaces: Int = 6
+    var diceCount: Int = 2 { didSet { persist() } }
+    var diceFaces: Int = 6 { didSet { persist() } }
     var diceValues: [Int] = [1, 1]
     var diceRolling: Bool = false
     var diceSum: Int { diceValues.reduce(0, +) }
@@ -998,14 +1025,14 @@ final class AppModel {
 
     // MARK: 抽卡
 
-    var includeJokers: Bool = false
-    var cardDrawCount: Int = 1
+    var includeJokers: Bool = false { didSet { persist() } }
+    var cardDrawCount: Int = 1 { didSet { persist() } }
     var cards: [PlayingCard] = []
     var cardRolling: Bool = false
 
     // MARK: 随机颜色
 
-    var paletteMode: ColorPaletteMode = .bright
+    var paletteMode: ColorPaletteMode = .bright { didSet { persist() } }
     var colorHue: Double = 214
     var colorSat: Double = 0.82
     var colorBri: Double = 1.0
@@ -1018,8 +1045,8 @@ final class AppModel {
 
     // MARK: 随机字母
 
-    var letterScope: LetterScope = .full
-    var letterUppercase: Bool = true
+    var letterScope: LetterScope = .full { didSet { persist() } }
+    var letterUppercase: Bool = true { didSet { persist() } }
     var letterResult: String = ""
     var letterRolling: Bool = false
 
@@ -1041,9 +1068,9 @@ final class AppModel {
 
     // MARK: 抽小组 / 抽声部
 
-    var groupPickTotal: Int = 4
-    var groupPickCount: Int = 1
-    var groupPickMode: Int = 0 // 0: 组号 (第 1 组..第 N 组), 1: 四部合唱, 2: 二部合唱
+    var groupPickTotal: Int = 4 { didSet { persist() } }
+    var groupPickCount: Int = 1 { didSet { persist() } }
+    var groupPickMode: Int = 0 { didSet { persist() } } // 0: 组号 (第 1 组..第 N 组), 1: 四部合唱, 2: 二部合唱
     var groupPickResults: [String] = []
     var groupPickRolling: Bool = false
     var groupPickHistory: [String] = []
@@ -1128,7 +1155,18 @@ final class AppModel {
         countdownRemaining = countdownTotal
     }
 
+    /// 课堂加时（如排练/讨论延长 30 秒或 1 分钟），不打断正在运行的倒计时。
+    func extendCountdown(by seconds: Int) {
+        guard seconds > 0 else { return }
+        countdownRemaining += seconds
+        if countdownRemaining > countdownTotal {
+            countdownTotal = countdownRemaining
+        }
+    }
+
     @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private var speechWorkItem: DispatchWorkItem?
+    @ObservationIgnored private var persistWorkItem: DispatchWorkItem?
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private let storageKey = "cn.renqiaoyi.random.state.v3"
     /// 启动加载中：这段时间禁止 persist（否则会用默认值覆盖磁盘上的记录）
@@ -1256,8 +1294,18 @@ final class AppModel {
            let level = EffectLevel(rawValue: v) { effectLevel = level }
     }
 
+    /// 连续滑块防抖落盘：拖动字号/节奏/音量滑块时不每帧同步写盘，松手后 0.25 秒一次写入。
+    func schedulePersist() {
+        guard !isLoading else { return }
+        persistWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in self?.persist() }
+        persistWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: item)
+    }
+
     func persist() {
         guard !isLoading else { return }
+        persistWorkItem?.cancel()
         defaults.set([
             "classID": classID,
             "selection": selection.id,
@@ -1485,15 +1533,21 @@ final class AppModel {
     func drawSequence() {
         guard !sequenceRolling, currentNames.count > 1 else { return }
         let final = shuffledOrder()
+        let targetClassID = classID
         sequenceRolling = true
         finishAfter(0.95, tick: 0.060, tickEnd: 0.038, sound: .shuffle, roll: {
             self.sequenceResult = self.shuffledOrder()
         }, settle: {
+            guard self.classID == targetClassID else {
+                self.sequenceRolling = false
+                return
+            }
             Sound.shared.victory()
             self.sequenceRolling = false
             self.sequenceResult = final
             self.cheer()
             self.logHistory(kind: Tool.sequence.rawValue,
+                            classID: targetClassID,
                             text: final.map { self.name(no: $0) ?? "\(self.fmtNo($0)) 号" }
                                 .joined(separator: "、"))
         })
@@ -1801,6 +1855,9 @@ final class AppModel {
                 self.groupPickHistory = Array(self.groupPickHistory.prefix(30))
             }
             self.cheer()
+            self.logHistory(kind: Tool.groupPick.rawValue,
+                            classID: self.classID,
+                            text: final.joined(separator: "、"))
             self.persist()
         })
     }
@@ -1933,6 +1990,26 @@ final class AppModel {
     ///
     /// `sound` 指定这一轮用哪个工具的过程音 —— 骰子滚桌、硬币叮当、
     /// 抽卡洗牌、点名木牌……原来十一个工具共用一套嘟嘟嘟，听不出在干什么。
+    /// 中止当前正在进行的任意滚动与延迟播报（切页 / 换班时调用，防止异步回调写脏新页面）。
+    func cancelActiveRoll() {
+        timer?.invalidate()
+        timer = nil
+        speechWorkItem?.cancel()
+        speechWorkItem = nil
+        pickRolling = false
+        groupingRolling = false
+        sequenceRolling = false
+        groupPickRolling = false
+        numRolling = false
+        diceRolling = false
+        coinRolling = false
+        cardRolling = false
+        colorRolling = false
+        letterRolling = false
+        rpsRolling = false
+        yesNoRolling = false
+    }
+
     private func finishAfter(_ duration: Double,
                              tick tickStart: Double,
                              tickEnd: Double? = nil,
@@ -1969,5 +2046,10 @@ final class AppModel {
         timer = t
     }
 
-    deinit { timer?.invalidate() }
+    deinit {
+        timer?.invalidate()
+        countdownTimer?.invalidate()
+        speechWorkItem?.cancel()
+        persistWorkItem?.cancel()
+    }
 }

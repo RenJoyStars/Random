@@ -289,7 +289,7 @@ check(CelebrationTheme.allCases.allSatisfy { !$0.symbol.isEmpty }, "每种特效
 for t in CelebrationTheme.allCases {
     check(CelebrationTheme.resolve(t.rawValue) == t, "固定「\(t.title)」时不会乱换")
 }
-check(CelebrationTheme.resolve("配置被写坏了") != nil, "配置值不认识时退回一个合法主题")
+check(CelebrationTheme.allCases.contains(CelebrationTheme.resolve("配置被写坏了")), "配置值不认识时退回一个合法主题")
 
 // 默认随机：抽 200 次要覆盖全部 4 种（只抽到 1~3 种的概率约等于 0）
 var seenThemes = Set<CelebrationTheme>()
@@ -412,6 +412,7 @@ check(nm.numRemaining == 10, "关掉记忆后剩余数 = 范围大小")
 
 // 持久化：重开 App 还记得抽过谁
 let nm3 = newModel()
+nm3.numNoRepeat = true
 nm3.numMin = 1
 nm3.numMax = 9
 nm3.numCount = 1

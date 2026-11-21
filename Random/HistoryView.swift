@@ -14,9 +14,19 @@ struct HistoryView: View {
     /// nil = 全部；其余是 `HistoryKind.pick` / `.group` / `Tool.rawValue`
     @State private var filter: String? = nil
     @State private var classFilter: String? = nil
+    @State private var keyword: String = ""
     @State private var copied = false
 
-    private var entries: [HistoryEntry] { model.historyEntries(kind: filter, classID: classFilter) }
+    private var entries: [HistoryEntry] {
+        let list = model.historyEntries(kind: filter, classID: classFilter)
+        let q = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return list }
+        return list.filter { entry in
+            entry.text.localizedStandardContains(q)
+                || HistoryKind.title(entry.kind).localizedStandardContains(q)
+                || (!entry.classID.isEmpty && model.title(of: entry.classID).localizedStandardContains(q))
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -39,7 +49,7 @@ struct HistoryView: View {
                 }
 
                 // MARK: 筛选栏
-                SectionLabel("筛选", count: (filter == nil && classFilter == nil) ? nil : "\(entries.count) 条") {
+                SectionLabel("筛选", count: (filter == nil && classFilter == nil && keyword.isEmpty) ? nil : "\(entries.count) 条") {
                     ClearButton(title: copied ? "已复制" : "复制 CSV",
                                 symbol: copied ? "checkmark" : "doc.on.doc",
                                 tint: copied ? .green : .accentColor,
@@ -51,7 +61,7 @@ struct HistoryView: View {
                 }
 
                 Bar {
-                    HStack(spacing: 14) {
+                    HStack(spacing: 12) {
                         HStack(spacing: 6) {
                             Image(systemName: "line.3.horizontal.decrease.circle")
                                 .font(.system(size: 13))
@@ -67,7 +77,7 @@ struct HistoryView: View {
                             }
                             .pickerStyle(.menu)
                             .labelsHidden()
-                            .frame(maxWidth: 150)
+                            .frame(maxWidth: 135)
                         }
 
                         if model.hasClasses {
@@ -85,17 +95,42 @@ struct HistoryView: View {
                                 }
                                 .pickerStyle(.menu)
                                 .labelsHidden()
-                                .frame(maxWidth: 150)
+                                .frame(maxWidth: 120)
                             }
                         }
 
+                        Divider().frame(height: 18)
+
+                        HStack(spacing: 5) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                            TextField("搜索姓名或结果", text: $keyword)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: Type.footnote))
+                                .frame(minWidth: 100, maxWidth: 180)
+                            if !keyword.isEmpty {
+                                Button { keyword = "" } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.06),
+                                    in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
                         Spacer(minLength: 0)
 
-                        if filter != nil || classFilter != nil {
-                            Button("重置筛选") {
+                        if filter != nil || classFilter != nil || !keyword.isEmpty {
+                            Button("重置") {
                                 withAnimation(.snappy(duration: 0.18)) {
                                     filter = nil
                                     classFilter = nil
+                                    keyword = ""
                                 }
                             }
                             .buttonStyle(.plain)

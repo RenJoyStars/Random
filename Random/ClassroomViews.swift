@@ -43,9 +43,21 @@ struct ClassroomView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: LayoutMetrics.pageSpacing) {
-                StageCard(minHeight: 190) {
+                StageCard(minHeight: 204,
+                          ambientTint: model.pickResults.isEmpty ? nil : .accentColor) {
                     VStack(spacing: 10) {
-                        StageBadge(symbol: "graduationcap", value: model.pickResults)
+                        HStack(spacing: 8) {
+                            StageBadge(symbol: "graduationcap", value: model.pickResults)
+                            if let fairBadge = model.fairPickBadge(for: model.pickResults) {
+                                Text(fairBadge)
+                                    .font(.system(size: Type.caption, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 3)
+                                    .background(Color.primary.opacity(0.06), in: Capsule())
+                                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                            }
+                        }
 
                         if model.pickResults.isEmpty {
                             let empty = emptyStageContent
@@ -96,15 +108,34 @@ struct ClassroomView: View {
                 // 点名的专属识别度：一条光带在花名册上左右扫，落定就收掉。
                 .overlay {
                     SpotlightSweep(active: model.pickRolling)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: LayoutMetrics.stageCornerRadius, style: .continuous))
                 }
-                .celebrationOverlay(model.celebration, theme: model.celebrationTheme,
-                     level: model.effectLevel)
+                .celebrationOverlay(model.celebration, radius: LayoutMetrics.stageCornerRadius,
+                                    theme: model.celebrationTheme, level: model.effectLevel)
 
-                PrimaryButton(title: "点名", symbol: "megaphone.fill",
-                              disabled: model.pickRolling) {
-                    model.drawPick()
+                HStack(spacing: 10) {
+                    PrimaryButton(title: "点名", symbol: "megaphone.fill",
+                                  disabled: model.pickRolling) {
+                        model.drawPick()
+                    }
+
+                    if !model.pickRolling && model.canUndo && !model.pickResults.isEmpty {
+                        Button {
+                            model.skipAndRedraw()
+                        } label: {
+                            Label("请假重抽", systemImage: "arrow.triangle.2.circlepath")
+                                .font(.system(size: Type.body, weight: .medium))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
+                        .help("撤销刚才抽中的同学并立刻补抽（不计入已抽与点名统计）")
+                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                    }
                 }
+                .animation(.snappy(duration: 0.18), value: model.canUndo && !model.pickRolling)
 
                 SectionLabel("设置")
 
@@ -143,23 +174,34 @@ struct ClassroomView: View {
                 }
 
                 Bar {
-                    HStack(spacing: 10) {
-                        StatTile(value: "\(Set(model.drawn).count)",
-                                 label: "已抽",
-                                 symbol: "checkmark")
+                    VStack(spacing: 10) {
+                        HStack(spacing: 10) {
+                            StatTile(value: "\(Set(model.drawn).count)",
+                                     label: "已抽",
+                                     symbol: "checkmark")
 
-                        // 两块统计紧挨着会被读成一个整体（"046"），
-                        // 一道细竖线把「本班进度」和「本轮剩余」分开。
-                        Divider().frame(height: 24)
+                            // 两块统计紧挨着会被读成一个整体（"046"），
+                            // 一道细竖线把「本班进度」和「本轮剩余」分开。
+                            Divider().frame(height: 24)
 
-                        StatTile(value: "\(model.pickRemaining)",
-                                 label: "本轮剩余",
-                                 tint: model.pickRemaining == 0 ? .red : .accentColor,
-                                 symbol: model.pickRemaining == 0 ? "exclamationmark" : "arrow.forward")
-                        Spacer(minLength: 0)
-                        ClearButton(title: "放回全部", symbol: "arrow.uturn.backward",
-                                    disabled: model.drawn.isEmpty) {
-                            withAnimation(.snappy(duration: 0.2)) { model.resetPick() }
+                            StatTile(value: "\(model.pickRemaining)",
+                                     label: "本轮剩余",
+                                     tint: model.pickRemaining == 0 ? .red : .accentColor,
+                                     symbol: model.pickRemaining == 0 ? "exclamationmark" : "arrow.forward")
+                            Spacer(minLength: 0)
+                            ClearButton(title: "放回全部", symbol: "arrow.uturn.backward",
+                                        disabled: model.drawn.isEmpty) {
+                                withAnimation(.snappy(duration: 0.2)) { model.resetPick() }
+                            }
+                        }
+
+                        if model.classCount > 0 {
+                            let progress = Double(Set(model.drawn).count) / Double(model.classCount)
+                            ThinProgressBar(
+                                progress: progress,
+                                tint: progress >= 1.0 ? .green : .accentColor,
+                                height: 4
+                            )
                         }
                     }
                 }

@@ -200,11 +200,17 @@ final class Sound {
 
     /// 主音量 0…1。0.8 是「投影教室里够响、又不刺耳」的位置。
     static var volume: Float = 0.8 {
-        didSet { Sound.shared.applyVolume() }
+        didSet {
+            guard isAudioGraphReady else { return }
+            Sound.shared.applyVolume()
+        }
     }
 
-    private let engine = AVAudioEngine()
-    private let mixer = AVAudioMixerNode()
+    /// 标记音频引擎是否已按需创建：关闭音效或无头测试环境下绝不碰 CoreAudio / AVAudioEngine。
+    private static var isAudioGraphReady = false
+
+    private var engine: AVAudioEngine?
+    private var mixer: AVAudioMixerNode?
     private let sampleRate: Double = 44_100
     private let format: AVAudioFormat
     private var players: [AVAudioPlayerNode] = []
@@ -233,14 +239,28 @@ final class Sound {
 
     private init() {
         format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
-        engine.attach(mixer)
+    }
+
+    /// 按需初始化音频图与硬件输出设备监听。
+    /// 只有真要发声时才创建 AVAudioEngine / AVAudioMixerNode，避免关闭音效或无音频设备环境崩溃。
+    private func ensureAudioGraph() -> Bool {
+        if engine != nil, mixer != nil { return true }
+        let eng = AVAudioEngine()
+        let mix = AVAudioMixerNode()
+        eng.attach(mix)
+        var createdPlayers: [AVAudioPlayerNode] = []
         // 一组播放节点轮流用，短音效可以互相叠着响，不会互相打断。
         for _ in 0..<12 {
             let node = AVAudioPlayerNode()
-            engine.attach(node)
-            players.append(node)
+            eng.attach(node)
+            createdPlayers.append(node)
         }
+        engine = eng
+        mixer = mix
+        players = createdPlayers
+        Self.isAudioGraphReady = true
         reconnectNodes()
+        applyVolume()
 
         // 1. 监听 CoreAudio 硬件级默认输出设备变化（投屏、AirPlay、插拔 HDMI/耳机、蓝牙切换）。
         // 关键：即使引擎当前处于 stop 状态，只要系统切换了默认声音出口，也能感知并防抖重配。
@@ -258,15 +278,17 @@ final class Sound {
         // 2. 监听 AVAudioEngine 运行中的拓扑变更通知。
         NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
-            object: engine,
+            object: eng,
             queue: .main
         ) { [weak self] _ in
             self?.scheduleDeviceReconfigure()
         }
+        return true
     }
 
     /// 重新连接所有音频节点，确保拓扑和格式在新输出设备上完整生效
     private func reconnectNodes() {
+        guard let engine, let mixer else { return }
         engine.disconnectNodeOutput(mixer)
         engine.connect(mixer, to: engine.mainMixerNode, format: format)
         for node in players {
@@ -287,6 +309,7 @@ final class Sound {
 
     /// 彻底平稳重置音频引擎并重新启动（支持握手延迟时的补刀重试）
     private func rebuildAndRestartEngine(retryCount: Int = 1) {
+        guard let engine else { return }
         running = false
         if engine.isRunning { engine.stop() }
         engine.reset()
@@ -301,7 +324,7 @@ final class Sound {
     }
 
     private func applyVolume() {
-        mixer.outputVolume = min(max(Sound.volume, 0), 1)
+        mixer?.outputVolume = min(max(Sound.volume, 0), 1)
     }
 
     // MARK: - 对外接口
@@ -426,6 +449,7 @@ final class Sound {
     /// 需要时启动引擎；启动失败时有 0.25 秒微冷却，避免高频 tick 撞墙，但绝不死锁设备重连
     @discardableResult
     private func start() -> Bool {
+        guard ensureAudioGraph(), let engine else { return false }
         if running && engine.isRunning { return true }
         running = false
         let now = Date()

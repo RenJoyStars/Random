@@ -354,6 +354,7 @@ private struct FlippingCard: View {
 
     @State private var flipped = false
     @State private var squashX: CGFloat = 1
+    @State private var flipTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -365,13 +366,17 @@ private struct FlippingCard: View {
         }
         .scaleEffect(x: max(0.03, squashX), y: 1)
         .onAppear {
+            flipTask?.cancel()
             squashX = 1
             withAnimation(.easeIn(duration: 0.11).delay(delay)) { squashX = 0.03 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.11) {
+            flipTask = Task {
+                try? await Task.sleep(for: .seconds(delay + 0.11))
+                guard !Task.isCancelled else { return }
                 flipped = true
                 withAnimation(.easeOut(duration: 0.13)) { squashX = 1 }
             }
         }
+        .onDisappear { flipTask?.cancel() }
     }
 }
 

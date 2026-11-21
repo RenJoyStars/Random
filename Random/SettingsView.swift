@@ -363,7 +363,8 @@ struct SettingsView: View {
                 Spacer(minLength: 12)
             }
             .macPagePadding()
-            .frame(maxWidth: 640)
+            .frame(maxWidth: 660)
+            .frame(maxWidth: .infinity)
         }
         .frame(minWidth: 540, minHeight: 560)
         .sheet(item: $editingClass) { cls in

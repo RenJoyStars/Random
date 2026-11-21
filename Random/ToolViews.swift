@@ -115,16 +115,22 @@ struct GroupingView: View {
         .background(Color.clear)
     }
 
-    /// 每组一张卡片，自适应列数（窄窗口自动变一列）。
+    private static let groupTints: [Color] = [.accentColor, .purple, .teal, .orange, .pink, .indigo]
+
+    /// 每组一张卡片，自适应列数（窄窗口自动变一列），按组轮换温和色标便于大屏辨识。
     private var groupCards: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 10)],
                   alignment: .leading, spacing: 10) {
             ForEach(Array(model.groups.enumerated()), id: \.offset) { index, members in
+                let tint = Self.groupTints[index % Self.groupTints.count]
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
+                        Circle()
+                            .fill(tint)
+                            .frame(width: 6, height: 6)
                         Text("第 \(index + 1) 组")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(tint)
                         Spacer(minLength: 4)
                         Text("\(members.count) 人")
                             .font(.system(size: 11))
@@ -148,7 +154,11 @@ struct GroupingView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.primary.opacity(0.05))
+                        .fill(tint.opacity(0.055))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(tint.opacity(0.16), lineWidth: 0.5)
                 }
             }
         }
@@ -775,19 +785,20 @@ struct SequenceView: View {
                     StageCard {
                         LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
                             ForEach(Array(model.sequenceResult.enumerated()), id: \.offset) { i, no in
+                                let isTopThree = i < 3
                                 HStack(spacing: 7) {
                                     Text("\(i + 1)")
-                                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                                        .foregroundStyle(.secondary)
+                                        .font(.system(size: 11, weight: isTopThree ? .bold : .semibold).monospacedDigit())
+                                        .foregroundStyle(isTopThree ? Color.accentColor : Color.secondary)
                                         .frame(width: 20, alignment: .trailing)
                                     Text(model.name(no: no) ?? "\(model.fmtNo(no)) 号")
-                                        .font(.system(size: 13))
+                                        .font(.system(size: 13, weight: isTopThree ? .semibold : .regular))
                                         .lineLimit(1)
                                 }
-                                .padding(.vertical, 3)
+                                .padding(.vertical, 4)
                                 .padding(.horizontal, 7)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.primary.opacity(0.05),
+                                .background(isTopThree ? Color.accentColor.opacity(0.10) : Color.primary.opacity(0.05),
                                             in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                             }
                         }
@@ -799,9 +810,7 @@ struct SequenceView: View {
     }
 
     private func copyOrder() {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(model.sequencePlainText, forType: .string)
+        Pasteboard.copy(model.sequencePlainText)
         copied = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
     }
@@ -847,14 +856,10 @@ struct GroupPickView: View {
                 .celebrationOverlay(model.celebration, theme: model.celebrationTheme,
                                      level: model.effectLevel)
 
-                HStack {
-                    Spacer()
-                    PrimaryButton(title: actionButtonTitle,
-                                  symbol: "person.3.fill",
-                                  disabled: model.groupPickRolling) {
-                        model.drawGroupPick()
-                    }
-                    Spacer()
+                PrimaryButton(title: actionButtonTitle,
+                              symbol: "person.3.fill",
+                              disabled: model.groupPickRolling) {
+                    model.drawGroupPick()
                 }
 
                 SectionLabel("抽取设置")
@@ -943,33 +948,55 @@ struct CountdownView: View {
         model.countdownRemaining > 0 && model.countdownRemaining <= 10
     }
 
+    private var isWarning: Bool {
+        model.countdownRemaining > 10 && model.countdownRemaining <= 30
+    }
+
+    private var progress: Double {
+        guard model.countdownTotal > 0 else { return 0 }
+        return Double(model.countdownRemaining) / Double(model.countdownTotal)
+    }
+
+    private var stageTint: Color {
+        if isUrgent || model.countdownRemaining == 0 { return .red }
+        if isWarning { return .orange }
+        return .accentColor
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: LayoutMetrics.pageSpacing) {
-                StageCard(minHeight: 200) {
+                StageCard(minHeight: 208, ambientTint: model.countdownRunning || isUrgent ? stageTint : nil) {
                     VStack(spacing: 14) {
                         HStack(spacing: 6) {
                             Image(systemName: "timer")
                             Text(model.countdownRunning ? "倒计时中" : (model.countdownRemaining == 0 ? "时间到！" : "就绪"))
                         }
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(isUrgent ? Color.red : Color.accentColor)
+                        .foregroundStyle(stageTint)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(stageTint.opacity(0.12), in: Capsule())
 
                         // 超大倒计时大字
                         Text(timeText)
                             .font(.system(size: 96 * model.effectiveStageScale, weight: .bold, design: .rounded))
                             .monospacedDigit()
+                            .contentTransition(.numericText(countsDown: true))
                             .foregroundStyle(isUrgent ? Color.red : Color.primary)
                             .resultPop(model.celebration)
+
+                        ThinProgressBar(progress: progress, tint: stageTint, height: 6)
+                            .frame(maxWidth: 360)
 
                         StageCaption(text: "音乐课堂视唱练耳 / 讨论练习计时专用")
                     }
                 }
                 .animation(.snappy(duration: 0.12), value: model.countdownRemaining)
-                .celebrationOverlay(model.celebration, theme: model.celebrationTheme,
-                                     level: model.effectLevel)
+                .celebrationOverlay(model.celebration, radius: LayoutMetrics.stageCornerRadius,
+                                    theme: model.celebrationTheme, level: model.effectLevel)
 
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     PrimaryButton(
                         title: model.countdownRunning ? "暂停" : (model.countdownRemaining == 0 ? "重新开始" : "开始计时"),
                         symbol: model.countdownRunning ? "pause.fill" : "play.fill",
@@ -979,16 +1006,29 @@ struct CountdownView: View {
                     }
 
                     Button {
-                        withAnimation(.snappy(duration: 0.2)) { model.resetCountdown() }
+                        withAnimation(.snappy(duration: 0.18)) { model.extendCountdown(by: 30) }
                     } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.counterclockwise")
-                            Text("重置")
-                        }
-                        .font(.system(size: 14, weight: .medium))
-                        .frame(minWidth: 80, minHeight: 38)
+                        Text("+30 秒")
+                            .font(.system(size: Type.body, weight: .medium))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
                     }
                     .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.large)
+                    .help("临时延长 30 秒，不打断当前计时")
+
+                    Button {
+                        withAnimation(.snappy(duration: 0.2)) { model.resetCountdown() }
+                    } label: {
+                        Label("重置", systemImage: "arrow.counterclockwise")
+                            .font(.system(size: Type.body, weight: .medium))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.large)
                 }
 
                 SectionLabel("快捷时长预设")

@@ -232,7 +232,7 @@ struct RootView: View {
             .padding(.bottom, 3)
     }
 
-    /// 年级标题行：整行可点，箭头带旋转动画。
+    /// 年级标题行：整行可点，箭头带旋转动画，收起时一眼看清班数。
     private func gradeHeader(_ group: AppModel.GradeGroup) -> some View {
         Button {
             setExpanded(group, to: !isExpanded(group))
@@ -250,6 +250,11 @@ struct RootView: View {
                     .foregroundStyle(Color.secondary)
 
                 Spacer(minLength: 0)
+
+                Text("\(group.count)")
+                    .font(.system(size: Type.tiny, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 8)
             .padding(.top, 10)
@@ -260,62 +265,16 @@ struct RootView: View {
         .help(isExpanded(group) ? "收起\(group.title)" : "展开\(group.title)")
     }
 
-    /// 侧边栏的一行（班级 / 工具 / 历史都用它，样式统一）。
+    /// 侧边栏的一行（班级 / 工具 / 历史都用它，样式统一，带原生悬停反馈）。
     private func sideRow(title: String, symbol: String, selected: Bool,
                          trailing: String? = nil,
                          trailingTint: Color = .secondary,
                          badge: String? = nil,
                          indent: Bool = false,
                          action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                // 侧边栏图标用强调色 —— 这是 macOS 的默认做法（Finder、备忘录、
-                // 音乐都是这样），它同时告诉用户"这里可以点"，比灰图标更有指示性。
-                // 选中时才转成白色压在强调色底上。
-                Image(systemName: symbol)
-                    .font(.system(size: 15))
-                    .frame(width: 20)
-                    .foregroundStyle(selected ? Color.white : Color.accentColor)
-
-                Text(title)
-                    .font(.system(size: 13))
-                    .lineLimit(1)
-                    .foregroundStyle(selected ? Color.white : Color.primary)
-
-                Spacer(minLength: 4)
-
-                if let trailing {
-                    Text(trailing)
-                        .font(.system(size: 11))
-                        .monospacedDigit()
-                        .foregroundStyle(selected ? Color.white.opacity(0.9) : trailingTint)
-                }
-
-                if let badge {
-                    Text(badge)
-                        .font(.system(size: 10, weight: .medium))
-                        .monospacedDigit()
-                        .foregroundStyle(selected ? Color.white.opacity(0.9) : Color.secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(selected ? Color.clear : Color.primary.opacity(0.08),
-                                    in: Capsule())
-                }
-            }
-            .padding(.horizontal, 8)
-            // 行高对齐 macOS 侧边栏的 32pt（13 号字 + 上下 6pt）
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background {
-            // 选中态就是系统强调色实心块 —— 和 Finder / 备忘录一致。
-            // （做过一版蓝紫渐变，好看但不原生：系统 app 的选中色是跟着
-            //  用户在"系统设置 → 外观"里选的强调色走的，不能自己定。）
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(selected ? Color.accentColor : Color.clear)
-        }
-        .padding(.leading, indent ? 13 : 0)
+        SidebarRowButton(title: title, symbol: symbol, selected: selected,
+                         trailing: trailing, trailingTint: trailingTint,
+                         badge: badge, indent: indent, action: action)
     }
 
     /// 搜索时按班号 / 班名过滤，并且**保留当前选中项** ——
@@ -595,11 +554,76 @@ struct CollapsibleRows<Content: View>: View {
 
 // MARK: - 选班大厅（课堂就绪）
 
+/// 带原生悬停高亮的侧边栏行按钮。
+private struct SidebarRowButton: View {
+    let title: String
+    let symbol: String
+    let selected: Bool
+    var trailing: String? = nil
+    var trailingTint: Color = .secondary
+    var badge: String? = nil
+    var indent: Bool = false
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.system(size: 15))
+                    .frame(width: 20)
+                    .foregroundStyle(selected ? Color.white : Color.accentColor)
+
+                Text(title)
+                    .font(.system(size: 13))
+                    .lineLimit(1)
+                    .foregroundStyle(selected ? Color.white : Color.primary)
+
+                Spacer(minLength: 4)
+
+                if let trailing {
+                    Text(trailing)
+                        .font(.system(size: 11))
+                        .monospacedDigit()
+                        .foregroundStyle(selected ? Color.white.opacity(0.9) : trailingTint)
+                }
+
+                if let badge {
+                    Text(badge)
+                        .font(.system(size: 10, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(selected ? Color.white.opacity(0.9) : Color.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(selected ? Color.clear : Color.primary.opacity(0.08),
+                                    in: Capsule())
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(selected ? Color.accentColor : (hovering ? Color.primary.opacity(0.06) : Color.clear))
+        }
+        .onHover { hovering = $0 }
+        .padding(.leading, indent ? 13 : 0)
+    }
+}
+
 struct WelcomeView: View {
     @Environment(AppModel.self) private var model
 
     private var totalStudents: Int {
         model.activeClasses.reduce(0) { $0 + $1.names.count }
+    }
+
+    private var recentClass: ClassRoster.SchoolClass? {
+        guard !model.classID.isEmpty else { return nil }
+        return model.activeClasses.first { $0.id == model.classID }
     }
 
     var body: some View {
@@ -614,14 +638,15 @@ struct WelcomeView: View {
                 footerInfo
             }
             .macPagePadding()
-            .frame(maxWidth: 880)
+            .frame(maxWidth: 920)
+            .frame(maxWidth: .infinity)
         }
     }
 
     // MARK: 顶部就绪舞台
 
     private var heroStage: some View {
-        StageCard(minHeight: 130) {
+        StageCard(minHeight: 136, ambientTint: .accentColor) {
             VStack(spacing: 10) {
                 HStack(spacing: 6) {
                     Image(systemName: "sparkles")
@@ -643,8 +668,32 @@ struct WelcomeView: View {
                 Text("点击下方班级卡片立即进入点名；亦可通过工具直达课堂互动活动")
                     .font(.system(size: Type.body))
                     .foregroundStyle(Color.secondary)
+
+                if let recent = recentClass {
+                    let drawn = model.drawnCount(of: recent.id)
+                    let total = model.names(of: recent.id).count
+                    Button {
+                        withAnimation(.snappy(duration: 0.18)) {
+                            model.selection = .classroom(recent.id)
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.system(size: 13))
+                            Text("继续 \(recent.shortTitle) 班（\(drawn)/\(total)）")
+                                .font(.system(size: Type.body, weight: .medium))
+                                .monospacedDigit()
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 5)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.regular)
+                    .padding(.top, 2)
+                }
             }
-            .padding(.vertical, 12)
+            .padding(.vertical, 10)
         }
     }
 
@@ -686,46 +735,12 @@ struct WelcomeView: View {
             }
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 180, maximum: 260), spacing: 12)], spacing: 12) {
-                quickToolTile(tool: .grouping, subtitle: "全班随机拆分小组")
-                quickToolTile(tool: .groupPick, subtitle: "抽取小组或二/四部合唱")
-                quickToolTile(tool: .countdown, subtitle: "课堂互动与答题倒计时")
-                quickToolTile(tool: .sequence, subtitle: "全班乱序出场表演")
+                QuickToolTile(tool: .grouping, subtitle: "全班随机拆分小组")
+                QuickToolTile(tool: .groupPick, subtitle: "抽取小组或二/四部合唱")
+                QuickToolTile(tool: .countdown, subtitle: "课堂互动与答题倒计时")
+                QuickToolTile(tool: .sequence, subtitle: "全班乱序出场表演")
             }
         }
-    }
-
-    private func quickToolTile(tool: Tool, subtitle: String) -> some View {
-        Button {
-            withAnimation(.snappy(duration: 0.18)) {
-                model.selection = .tool(tool)
-            }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: tool.symbol)
-                    .font(.system(size: 18))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 36, height: 36)
-                    .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tool.title)
-                        .font(.system(size: Type.body, weight: .medium))
-                        .foregroundStyle(Color.primary)
-                    Text(subtitle)
-                        .font(.system(size: Type.caption))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(10)
-            .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.8)
-            }
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: 底部信息
@@ -742,6 +757,54 @@ struct WelcomeView: View {
         }
         .padding(.horizontal, 4)
         .padding(.top, 4)
+    }
+}
+
+/// 课堂常用工具入口磁贴（带悬停微动效）
+private struct QuickToolTile: View {
+    @Environment(AppModel.self) private var model
+    let tool: Tool
+    let subtitle: String
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.18)) {
+                model.selection = .tool(tool)
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: tool.symbol)
+                    .font(.system(size: 18))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 36, height: 36)
+                    .background(Color.accentColor.opacity(isHovered ? 0.16 : 0.10),
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tool.title)
+                        .font(.system(size: Type.body, weight: .medium))
+                        .foregroundStyle(Color.primary)
+                    Text(subtitle)
+                        .font(.system(size: Type.caption))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .background(isHovered ? Color.primary.opacity(0.06) : Color.primary.opacity(0.03),
+                        in: RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
+                    .strokeBorder(isHovered ? Color.accentColor.opacity(0.35) : Color.primary.opacity(0.08),
+                                  lineWidth: isHovered ? 1.0 : 0.8)
+            }
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isHovered ? 1.012 : 1.0)
+        .animation(.snappy(duration: 0.16), value: isHovered)
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -788,17 +851,11 @@ struct ClassTileCard: View {
                             .foregroundStyle(.tertiary)
                     }
 
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.primary.opacity(0.06))
-                                .frame(height: 5)
-                            Capsule()
-                                .fill(drawn >= total && total > 0 ? Color.green : Color.accentColor)
-                                .frame(width: geo.size.width * CGFloat(min(1.0, max(0.0, progress))), height: 5)
-                        }
-                    }
-                    .frame(height: 5)
+                    ThinProgressBar(
+                        progress: progress,
+                        tint: drawn >= total && total > 0 ? Color.green : Color.accentColor,
+                        height: 5
+                    )
                 }
             }
             .padding(14)
@@ -813,6 +870,8 @@ struct ClassTileCard: View {
             }
         }
         .buttonStyle(.plain)
+        .scaleEffect(isHovered ? 1.012 : 1.0)
+        .animation(.snappy(duration: 0.16), value: isHovered)
         .onHover { isHovered = $0 }
     }
 

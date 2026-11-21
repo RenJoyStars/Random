@@ -19,7 +19,6 @@ SWIFT_FILES = [
     "RandomApp.swift",
     "AppModel.swift",
     "Platform.swift",
-    "GlassKit.swift",
     "Sound.swift",
     "ClassRoster.swift",
     "RosterFormat.swift",
@@ -30,6 +29,7 @@ SWIFT_FILES = [
     "RootView.swift",
     "ClassroomViews.swift",
     "ToolViews.swift",
+    "ToolFlourish.swift",
     "HistoryView.swift",
     "SettingsView.swift",
 ]
