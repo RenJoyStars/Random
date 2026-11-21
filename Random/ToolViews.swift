@@ -20,7 +20,7 @@ struct GroupingView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
                 StageCard(minHeight: 190) {
                     VStack(spacing: 14) {
                         StageBadge(symbol: "person.3.sequence", value: model.groups.count)
@@ -174,8 +174,8 @@ struct RandomNumberView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                StageCard(minHeight: 178) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
+                StageCard(minHeight: 190) {
                     VStack(spacing: 10) {
                         StageBadge(symbol: "arrow.left.arrow.right", value: model.numResults)
                             .opacity(model.numResults.isEmpty ? 0 : 1)
@@ -289,7 +289,7 @@ struct DiceView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
                 StageCard(minHeight: 190) {
                     VStack(spacing: 16) {
                         // 骰子会滚（DiceStage）：每颗相位错开地乱晃，落桌时砸一下。
@@ -385,8 +385,8 @@ struct CoinView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                StageCard(minHeight: 232) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
+                StageCard(minHeight: 210) {
                     // 硬币自己会翻（见 CoinStage）：抛起来、在空中转、落地砸一下再晃两下。
                     // 原来只是给整个圆盘套了个 rotation3DEffect，转起来文字还是镜像的。
                     CoinStage()
@@ -432,7 +432,7 @@ struct CardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
                 StageCard(minHeight: 200) {
                     VStack(spacing: 12) {
                         // 这里原来有个 ♠ 徽标，但牌本身就是画面主体，
@@ -487,8 +487,8 @@ struct ColorView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                StageCard(minHeight: 210) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
+                StageCard(minHeight: 200) {
                     // 色块抽的时候在"呼吸"，落定时向外扩一圈同色光环（ColorStage）。
                     ColorStage(color: model.colorSwatch,
                                hex: model.colorHex,
@@ -534,8 +534,8 @@ struct LetterView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                StageCard(minHeight: 184) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
+                StageCard(minHeight: 190) {
                     VStack(spacing: 10) {
                         StageBadge(symbol: "a.square", value: model.letterResult)
                             .opacity(model.letterResult.isEmpty ? 0 : 1)
@@ -591,8 +591,8 @@ struct RPSView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                StageCard(minHeight: 208) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
+                StageCard(minHeight: 200) {
                     // 猜拳就是两只手：预备时上下晃，落定时推出去（RPSStage）。
                     RPSStage(myMove: model.myMove,
                              aiMove: model.aiMove,
@@ -644,8 +644,8 @@ struct YesNoView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                StageCard(minHeight: 206) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
+                StageCard(minHeight: 200) {
                     VStack(spacing: 12) {
                         StageBadge(symbol: "questionmark.circle",
                                    value: model.yesNoResult ?? false)
@@ -713,8 +713,8 @@ struct SequenceView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                StageCard(minHeight: 140) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
+                StageCard(minHeight: 180) {
                     VStack(spacing: 10) {
                         if !model.hasClasses {
                             EmptyStage(text: "还没有班级名单", symbol: "square.and.arrow.down",
@@ -945,7 +945,7 @@ struct CountdownView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: LayoutMetrics.pageSpacing) {
                 StageCard(minHeight: 200) {
                     VStack(spacing: 14) {
                         HStack(spacing: 6) {

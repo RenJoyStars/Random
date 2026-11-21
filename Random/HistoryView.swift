@@ -4,11 +4,9 @@ import UniformTypeIdentifiers
 
 // MARK: - 历史记录（2.0）
 //
-// 一条时间线装下所有结果：点名、分组、八个随机工具。
+// 一条时间线装下所有结果：点名、分组、各随机工具。
 // 课上用来翻「刚才点的是谁」，课后一键导出 CSV 交给班主任或教研组。
-//
-// 为什么单独做一页而不是塞进各工具页：
-//   老师真正要问的是「这节课都抽了什么」，不是「骰子那一栏掷过几把」。
+// 遵循 macOS 27 Golden Gate 视觉语言：KPI 数据卡片、时间线胶囊与直观过滤交互。
 
 struct HistoryView: View {
     @Environment(AppModel.self) private var model
@@ -23,19 +21,24 @@ struct HistoryView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: LayoutMetrics.pageSpacing) {
+                // MARK: 概览 KPI 卡片
                 SectionLabel("概览")
-                Bar {
-                    HStack(spacing: 10) {
-                        StatTile(value: "\(model.history.count)", label: "全部记录",
-                                 symbol: "clock.arrow.circlepath")
-                        StatTile(value: "\(model.pickEventTotal)", label: "点名",
-                                 tint: .accentColor, symbol: "megaphone")
-                        StatTile(value: "\(model.groupEventTotal)", label: "分组",
-                                 symbol: "person.3.sequence")
-                        Spacer(minLength: 0)
-                    }
+                HStack(spacing: 12) {
+                    kpiTile(value: "\(model.history.count)",
+                            label: "全部记录",
+                            symbol: "clock.arrow.circlepath",
+                            tint: .primary)
+                    kpiTile(value: "\(model.pickEventTotal)",
+                            label: "班级点名",
+                            symbol: "megaphone.fill",
+                            tint: .accentColor)
+                    kpiTile(value: "\(model.groupEventTotal)",
+                            label: "随机分组",
+                            symbol: "person.3.sequence.fill",
+                            tint: .purple)
                 }
 
+                // MARK: 筛选栏
                 SectionLabel("筛选", count: (filter == nil && classFilter == nil) ? nil : "\(entries.count) 条") {
                     ClearButton(title: copied ? "已复制" : "复制 CSV",
                                 symbol: copied ? "checkmark" : "doc.on.doc",
@@ -48,127 +51,189 @@ struct HistoryView: View {
                 }
 
                 Bar {
-                    HStack(spacing: 12) {
-                        Text("类型").font(.system(size: 13))
-                        Picker("", selection: $filter) {
-                            Text("全部类型").tag(String?.none)
-                            Text("点名").tag(String?.some(HistoryKind.pick))
-                            Text("分组").tag(String?.some(HistoryKind.group))
-                            ForEach(Tool.allCases) { tool in
-                                Text(tool.title).tag(String?.some(tool.rawValue))
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(maxWidth: 160)
-
-                        if model.hasClasses {
-                            Divider().frame(height: 18)
-                            Text("班级").font(.system(size: 13))
-                            Picker("", selection: $classFilter) {
-                                Text("全部班级").tag(String?.none)
-                                ForEach(model.activeClasses) { cls in
-                                    Text(cls.shortTitle).tag(String?.some(cls.id))
+                    HStack(spacing: 14) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "line.3.horizontal.decrease.circle")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.secondary)
+                            Text("类型").font(.system(size: 13, weight: .medium))
+                            Picker("", selection: $filter) {
+                                Text("全部类型").tag(String?.none)
+                                Text("点名").tag(String?.some(HistoryKind.pick))
+                                Text("分组").tag(String?.some(HistoryKind.group))
+                                ForEach(Tool.allCases) { tool in
+                                    Text(tool.title).tag(String?.some(tool.rawValue))
                                 }
                             }
                             .pickerStyle(.menu)
                             .labelsHidden()
-                            .frame(maxWidth: 160)
+                            .frame(maxWidth: 150)
+                        }
+
+                        if model.hasClasses {
+                            Divider().frame(height: 18)
+                            HStack(spacing: 6) {
+                                Image(systemName: "graduationcap")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.secondary)
+                                Text("班级").font(.system(size: 13, weight: .medium))
+                                Picker("", selection: $classFilter) {
+                                    Text("全部班级").tag(String?.none)
+                                    ForEach(model.activeClasses) { cls in
+                                        Text(cls.shortTitle).tag(String?.some(cls.id))
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .labelsHidden()
+                                .frame(maxWidth: 150)
+                            }
                         }
 
                         Spacer(minLength: 0)
+
+                        if filter != nil || classFilter != nil {
+                            Button("重置筛选") {
+                                withAnimation(.snappy(duration: 0.18)) {
+                                    filter = nil
+                                    classFilter = nil
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: Type.caption))
+                            .foregroundStyle(Color.accentColor)
+                        }
                     }
                 }
 
-                SectionLabel("记录", count: "\(entries.count) 条")
+                // MARK: 记录列表
+                SectionLabel("记录时间线", count: "\(entries.count) 条")
 
-                Bar {
+                CardGroup {
                     if entries.isEmpty {
                         EmptyRecords(text: model.history.isEmpty
                                      ? "还没有记录。点名、分组或抽取之后，这里会留下时间线。"
-                                     : "这个筛选下没有记录。")
+                                     : "当前筛选条件下没有记录。")
                     } else {
                         LazyVStack(spacing: 0) {
                             ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                                 row(entry)
                                 if index < entries.count - 1 {
-                                    // 0.4 透明度的 Divider 在深色卡片上基本看不见，
-                                    // 整列读起来像一堆悬空的行。改成实色细线，
-                                    // 并从文字左缘（图标 18 + 间距 10 + 外层 14）起画 ——
-                                    // 系统的列表分隔线是缩进的，不贯穿卡片。
                                     Rectangle()
-                                        .fill(Color.semantic(.separator))
+                                        .fill(Color.semantic(.separator).opacity(0.6))
                                         .frame(height: 0.5)
-                                        .padding(.leading, 42)
+                                        .padding(.leading, 46)
                                 }
                             }
                         }
                     }
                 }
 
-                HStack(spacing: 10) {
+                // MARK: 底部操作
+                HStack(spacing: 12) {
                     Button {
                         exportCSV()
                     } label: {
-                        Label("导出 CSV…", systemImage: "square.and.arrow.up")
+                        Label("导出 CSV 文件…", systemImage: "square.and.arrow.up")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
                     .disabled(model.history.isEmpty)
 
                     Button(role: .destructive) {
                         confirmClear()
                     } label: {
-                        Label("清空历史", systemImage: "trash")
+                        Label("清空历史记录", systemImage: "trash")
                     }
                     .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .controlSize(.regular)
                     .disabled(model.history.isEmpty)
 
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 4)
 
-                Text("导出的 CSV 四列：时间、类型、班级、结果。UTF-8 带 BOM，Excel 直接打开不乱码。历史只存本机，最多保留 \(AppModel.historyLimit) 条。")
-                    .font(.caption)
+                Text("导出的 CSV 包含四列：时间、类型、班级、结果。UTF-8 带 BOM 编码，Excel 直接打开绝无乱码。所有数据仅保存在本机，最多保留 \(AppModel.historyLimit) 条。")
+                    .font(.system(size: Type.caption))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 4)
 
-                Spacer(minLength: 2)
+                Spacer(minLength: 12)
             }
             .macPagePadding()
         }
         .background(Color.clear)
     }
 
-    private func row(_ entry: HistoryEntry) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: HistoryKind.symbol(entry.kind))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(entry.isPick ? Color.accentColor : Color.secondary)
-                .frame(width: 18)
-                .padding(.top, 2)
-                .accessibilityHidden(true)
+    // MARK: KPI 卡片
+
+    private func kpiTile(value: String, label: String, symbol: String, tint: Color) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 36, height: 36)
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+                Text(label)
+                    .font(.system(size: Type.caption))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background {
+            RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
+                .fill(Color.semantic(.controlBackground))
+                .shadow(color: Color.black.opacity(0.02), radius: 6, x: 0, y: 2)
+                .overlay {
+                    RoundedRectangle(cornerRadius: LayoutMetrics.cardCornerRadius, style: .continuous)
+                        .strokeBorder(Color.semantic(.separator).opacity(0.7), lineWidth: 0.5)
+                }
+        }
+    }
+
+    // MARK: 行布局
+
+    private func row(_ entry: HistoryEntry) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: HistoryKind.symbol(entry.kind))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(badgeTint(for: entry))
+                .frame(width: 28, height: 28)
+                .background(badgeTint(for: entry).opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
                 Text(entry.text)
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, weight: .medium))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(subtitle(entry))
-                    .font(.system(size: 11))
+                    .font(.system(size: Type.caption))
                     .foregroundStyle(.secondary)
             }
 
             Spacer(minLength: 6)
 
             Text(entry.date.formatted(date: .omitted, time: .shortened))
-                .font(.system(size: 11))
-                .monospacedDigit()
+                .font(.system(size: Type.caption).monospacedDigit())
                 .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 7)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color.semantic(.controlBackground))
+    }
+
+    private func badgeTint(for entry: HistoryEntry) -> Color {
+        if entry.isPick { return .accentColor }
+        if entry.kind == HistoryKind.group { return .purple }
+        return .secondary
     }
 
     private func subtitle(_ entry: HistoryEntry) -> String {

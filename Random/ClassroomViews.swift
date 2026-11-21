@@ -244,9 +244,18 @@ private struct PickStatChip: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
             Spacer(minLength: 4)
-            Text(count == 0 ? "没点过" : "\(count) 次")
-                .font(.system(size: 11))
-                .foregroundStyle(count == 0 ? Color.orange : Color.secondary)
+            if count == 0 {
+                Text("没点过")
+                    .font(.system(size: Type.caption, weight: .semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(Color.orange.opacity(0.12), in: Capsule())
+            } else {
+                Text("\(count) 次")
+                    .font(.system(size: Type.caption))
+                    .foregroundStyle(.secondary)
+            }
         }
         .font(.system(size: 13))
         .lineLimit(1)
