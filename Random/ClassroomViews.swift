@@ -44,10 +44,11 @@ struct ClassroomView: View {
         ScrollView {
             VStack(spacing: LayoutMetrics.pageSpacing) {
                 StageCard(minHeight: 204,
-                          ambientTint: model.pickResults.isEmpty ? nil : .accentColor) {
+                          ambientTint: model.pickResults.isEmpty ? nil : model.resolvedStageAccent) {
                     VStack(spacing: 10) {
                         HStack(spacing: 8) {
-                            StageBadge(symbol: "graduationcap", value: model.pickResults)
+                            StageBadge(symbol: "graduationcap", value: model.pickResults,
+                                       tint: model.resolvedStageAccent)
                             if let fairBadge = model.fairPickBadge(for: model.pickResults) {
                                 Text(fairBadge)
                                     .font(.system(size: Type.caption, weight: .medium))

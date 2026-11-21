@@ -300,10 +300,8 @@ struct DiceView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: LayoutMetrics.pageSpacing) {
-                StageCard(minHeight: 190) {
-                    VStack(spacing: 16) {
-                        // 骰子会滚（DiceStage）：每颗相位错开地乱晃，落桌时砸一下。
-                        // 原来只用 symbolEffect(.bounce) 弹一下，像图标而不是骰子。
+                StageCard(minHeight: 204, ambientTint: model.resolvedStageAccent) {
+                    VStack(spacing: 14) {
                         DiceStage(values: model.diceValues,
                                   faces: model.diceFaces,
                                   rolling: model.diceRolling)
@@ -313,6 +311,8 @@ struct DiceView: View {
                                      : "点数 \(model.diceValues.first ?? 1)")
                     }
                 }
+                .celebrationOverlay(model.celebration, radius: LayoutMetrics.stageCornerRadius,
+                                    theme: model.celebrationTheme, level: model.effectLevel)
 
                 PrimaryButton(title: "掷骰子", symbol: "die.face.6",
                               disabled: model.diceRolling) { model.rollDice() }
@@ -336,9 +336,19 @@ struct DiceView: View {
                         .pickerStyle(.segmented)
                         .labelsHidden()
                     }
+
+                    OptionField("骰子材质") {
+                        Picker("", selection: model.binding(\.diceStyle)) {
+                            ForEach(DiceStyle.allCases) { s in
+                                Text(s.title).tag(s)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
                 }
 
-                Text("面数为 6 时显示标准骰面，其他面数直接显示点数。")
+                Text("面数为 6 时显示 3D 倒角标准骰面，其他面数显示立体点数。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
@@ -354,33 +364,79 @@ struct DiceView: View {
 struct DieFace: View {
     let value: Int
     let faces: Int
+    var style: DiceStyle = .ivory
 
-    private var size: CGFloat { faces == 6 ? 64 : 70 }
+    private var size: CGFloat { faces == 6 ? 68 : 72 }
+
+    private var colors: (top: Color, bottom: Color, ink: Color, edge: Color) {
+        switch style {
+        case .ivory:
+            return (Color(white: 0.99), Color(white: 0.88), Color(white: 0.14), Color.black.opacity(0.18))
+        case .obsidian:
+            return (Color(white: 0.24), Color(white: 0.10), Color(white: 0.96), Color.white.opacity(0.18))
+        case .emerald:
+            return (Color(red: 0.16, green: 0.64, blue: 0.44), Color(red: 0.06, green: 0.36, blue: 0.24),
+                    Color.white, Color.white.opacity(0.24))
+        case .ruby:
+            return (Color(red: 0.86, green: 0.20, blue: 0.26), Color(red: 0.54, green: 0.08, blue: 0.14),
+                    Color(red: 1.00, green: 0.93, blue: 0.72), Color.white.opacity(0.24))
+        }
+    }
 
     var body: some View {
-        Group {
+        let c = colors
+        let shape = RoundedRectangle(cornerRadius: 15, style: .continuous)
+        ZStack {
+            shape
+                .fill(LinearGradient(colors: [c.top, c.bottom], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .overlay {
+                    shape.strokeBorder(
+                        LinearGradient(colors: [Color.white.opacity(0.55), c.edge],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 1.2
+                    )
+                }
+                .shadow(color: .black.opacity(0.20), radius: 6, y: 3)
+
             if faces == 6 {
-                Image(systemName: "die.face.\(min(max(value, 1), 6))")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: size, height: size)
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.primary)
+                pipGrid(for: min(max(value, 1), 6), color: c.ink)
+                    .padding(11)
             } else {
                 Text("\(value)")
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .minimumScaleFactor(0.4)
-                    .foregroundStyle(.primary)
-                    .frame(width: size, height: size)
-                    .background {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color.primary.opacity(0.05))
+                    .foregroundStyle(c.ink)
+            }
+        }
+        .frame(width: size, height: size)
+    }
+
+    @ViewBuilder
+    private func pipGrid(for n: Int, color: Color) -> some View {
+        let pipColor: Color = (n == 1 && style == .ivory) ? Color(red: 0.86, green: 0.20, blue: 0.24) : color
+        let d: CGFloat = n == 1 ? 15 : 10.5
+        let active: Set<Int> = {
+            switch n {
+            case 1: return [4]
+            case 2: return [0, 8]
+            case 3: return [0, 4, 8]
+            case 4: return [0, 2, 6, 8]
+            case 5: return [0, 2, 4, 6, 8]
+            default: return [0, 2, 3, 5, 6, 8]
+            }
+        }()
+        VStack(spacing: 0) {
+            ForEach(0..<3, id: \.self) { r in
+                if r > 0 { Spacer(minLength: 0) }
+                HStack(spacing: 0) {
+                    ForEach(0..<3, id: \.self) { col in
+                        if col > 0 { Spacer(minLength: 0) }
+                        Circle()
+                            .fill(active.contains(r * 3 + col) ? pipColor : Color.clear)
+                            .frame(width: d, height: d)
                     }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.3), lineWidth: 1.5)
-                    }
+                }
             }
         }
     }
@@ -396,14 +452,44 @@ struct CoinView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: LayoutMetrics.pageSpacing) {
-                StageCard(minHeight: 210) {
-                    // 硬币自己会翻（见 CoinStage）：抛起来、在空中转、落地砸一下再晃两下。
-                    // 原来只是给整个圆盘套了个 rotation3DEffect，转起来文字还是镜像的。
+                StageCard(minHeight: 218, ambientTint: model.resolvedStageAccent) {
                     CoinStage()
                 }
+                .celebrationOverlay(model.celebration, radius: LayoutMetrics.stageCornerRadius,
+                                    theme: model.celebrationTheme, level: model.effectLevel)
 
                 PrimaryButton(title: "抛硬币", symbol: "arrow.triangle.2.circlepath",
                               disabled: model.coinRolling) { model.flipCoin() }
+
+                SectionLabel("硬币客制化")
+
+                CardGroup {
+                    OptionField("金属材质") {
+                        Picker("", selection: model.binding(\.coinStyle)) {
+                            ForEach(CoinStyle.allCases) { s in
+                                Text(s.title).tag(s)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
+
+                    OptionBar("自定义两面文字", hint: "可改为「唱/奏」「男/女」等课堂二选一") {
+                        HStack(spacing: 8) {
+                            TextField("正", text: model.binding(\.coinHeadsLabel))
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: Type.body))
+                                .multilineTextAlignment(.center)
+                                .frame(width: 64)
+                            Text("/").foregroundStyle(.secondary)
+                            TextField("反", text: model.binding(\.coinTailsLabel))
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: Type.body))
+                                .multilineTextAlignment(.center)
+                                .frame(width: 64)
+                        }
+                    }
+                }
 
                 SectionLabel("统计") {
                     ClearButton(disabled: total == 0) { model.resetCoin() }
@@ -411,9 +497,9 @@ struct CoinView: View {
 
                 Bar {
                     HStack(spacing: 10) {
-                        StatTile(value: "\(model.coinHeads)", label: "正面", symbol: "circle")
+                        StatTile(value: "\(model.coinHeads)", label: model.coinHeadsLabel, symbol: "circle")
                         Divider().frame(height: 24)
-                        StatTile(value: "\(model.coinTails)", label: "反面", symbol: "circle.dashed")
+                        StatTile(value: "\(model.coinTails)", label: model.coinTailsLabel, symbol: "circle.dashed")
                         Divider().frame(height: 24)
                         StatTile(value: "\(total)", label: "总次数", tint: .accentColor)
                         Spacer(minLength: 0)
@@ -443,16 +529,11 @@ struct CardView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: LayoutMetrics.pageSpacing) {
-                StageCard(minHeight: 200) {
+                StageCard(minHeight: 214, ambientTint: model.cards.isEmpty ? nil : model.resolvedStageAccent) {
                     VStack(spacing: 12) {
-                        // 这里原来有个 ♠ 徽标，但牌本身就是画面主体，
-                        // 一个孤零零的黑桃飘在牌上方只会显得多余 —— 去掉。
-
                         if model.cards.isEmpty && !model.cardRolling {
                             EmptyStage(text: "待抽牌", symbol: "suit.spade", height: 118)
                         } else {
-                            // 洗牌 → 逐张翻开（CardStage）。牌背到牌面那一下必须真的"翻"，
-                            // 只换图的话，看着像换了张图片而不是抽了张牌。
                             CardStage(cards: model.cards,
                                       count: model.cardDrawCount,
                                       rolling: model.cardRolling,
@@ -464,8 +545,11 @@ struct CardView: View {
                     }
                 }
                 .animation(.snappy(duration: 0.14), value: model.cards)
+                .celebrationOverlay(model.celebration, radius: LayoutMetrics.stageCornerRadius,
+                                    theme: model.celebrationTheme, level: model.effectLevel)
 
-                PrimaryButton(title: "抽一张", symbol: "suit.spade.fill",
+                PrimaryButton(title: model.cardDrawCount > 1 ? "抽 \(model.cardDrawCount) 张" : "抽一张",
+                              symbol: "suit.spade.fill",
                               disabled: model.cardRolling) { model.drawCards() }
 
                 SectionLabel("牌堆设置")
@@ -479,6 +563,16 @@ struct CardView: View {
                     OptionBar("包含大小王", hint: "共 54 张") {
                         Toggle("", isOn: model.binding(\.includeJokers))
                             .toggleStyle(.switch).labelsHidden()
+                    }
+
+                    OptionField("牌背风格") {
+                        Picker("", selection: model.binding(\.cardBackStyle)) {
+                            ForEach(CardBackStyle.allCases) { s in
+                                Text(s.title).tag(s)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
                     }
                 }
 
@@ -498,8 +592,7 @@ struct ColorView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: LayoutMetrics.pageSpacing) {
-                StageCard(minHeight: 200) {
-                    // 色块抽的时候在"呼吸"，落定时向外扩一圈同色光环（ColorStage）。
+                StageCard(minHeight: 208, ambientTint: model.colorSwatch) {
                     ColorStage(color: model.colorSwatch,
                                hex: model.colorHex,
                                rgbText: model.colorRGBText,
@@ -507,6 +600,8 @@ struct ColorView: View {
                                rolling: model.colorRolling,
                                pulse: model.celebration)
                 }
+                .celebrationOverlay(model.celebration, radius: LayoutMetrics.stageCornerRadius,
+                                    theme: model.celebrationTheme, level: model.effectLevel)
 
                 PrimaryButton(title: "换一个颜色", symbol: "paintpalette.fill",
                               disabled: model.colorRolling) { model.drawColor() }
@@ -602,13 +697,14 @@ struct RPSView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: LayoutMetrics.pageSpacing) {
-                StageCard(minHeight: 200) {
-                    // 猜拳就是两只手：预备时上下晃，落定时推出去（RPSStage）。
+                StageCard(minHeight: 208, ambientTint: model.rpsResultText == "你赢了" ? .green : nil) {
                     RPSStage(myMove: model.myMove,
                              aiMove: model.aiMove,
                              rolling: model.rpsRolling,
                              resultText: model.rpsResultText)
                 }
+                .celebrationOverlay(model.celebration, radius: LayoutMetrics.stageCornerRadius,
+                                    theme: model.celebrationTheme, level: model.effectLevel)
 
                 HStack(spacing: 12) {
                     ForEach(RPS.allCases) { move in
@@ -655,14 +751,15 @@ struct YesNoView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: LayoutMetrics.pageSpacing) {
-                StageCard(minHeight: 200) {
+                StageCard(minHeight: 204,
+                          ambientTint: model.yesNoResult.map { $0 ? .green : .red }) {
                     VStack(spacing: 12) {
                         StageBadge(symbol: "questionmark.circle",
                                    value: model.yesNoResult ?? false)
                             .opacity(model.yesNoResult == nil ? 0 : 1)
 
                         if let result = model.yesNoResult {
-                            YesNoStage(text: result ? "是" : "否",
+                            YesNoStage(text: result ? model.yesLabel : model.noLabel,
                                        positive: result,
                                        rolling: model.yesNoRolling,
                                        size: 124 * model.effectiveStageScale)
@@ -673,15 +770,35 @@ struct YesNoView: View {
 
                         StageCaption(text: model.yesNoResult == nil
                                      ? "让随机帮你做决定"
-                                     : (model.yesNoResult! ? "答案是：是" : "答案是：否"))
+                                     : "答案是：\(model.yesNoResult! ? model.yesLabel : model.noLabel)")
                     }
                 }
                 .animation(.snappy(duration: 0.12), value: model.yesNoResult ?? false)
-                .celebrationOverlay(model.celebration, theme: model.celebrationTheme,
-                     level: model.effectLevel)
+                .celebrationOverlay(model.celebration, radius: LayoutMetrics.stageCornerRadius,
+                                    theme: model.celebrationTheme, level: model.effectLevel)
 
                 PrimaryButton(title: "抽取", symbol: "questionmark.circle",
                               disabled: model.yesNoRolling) { model.drawYesNo() }
+
+                SectionLabel("文案客制化")
+
+                CardGroup {
+                    OptionBar("自定义结果文字", hint: "默认「是 / 否」，可改为「加练 / 下课」等") {
+                        HStack(spacing: 8) {
+                            TextField("是", text: model.binding(\.yesLabel))
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: Type.body))
+                                .multilineTextAlignment(.center)
+                                .frame(width: 72)
+                            Text("/").foregroundStyle(.secondary)
+                            TextField("否", text: model.binding(\.noLabel))
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: Type.body))
+                                .multilineTextAlignment(.center)
+                                .frame(width: 72)
+                        }
+                    }
+                }
 
                 SectionLabel("统计", count: total > 0 ? "共 \(total) 次" : nil) {
                     ClearButton(disabled: total == 0) { model.resetYesNo() }
@@ -689,10 +806,10 @@ struct YesNoView: View {
 
                 Bar {
                     HStack(spacing: 10) {
-                        StatTile(value: "\(model.yesCount)", label: "是",
+                        StatTile(value: "\(model.yesCount)", label: model.yesLabel,
                                  tint: .green, symbol: "checkmark")
                         Divider().frame(height: 24)
-                        StatTile(value: "\(model.noCount)", label: "否",
+                        StatTile(value: "\(model.noCount)", label: model.noLabel,
                                  tint: .red, symbol: "xmark")
                         Divider().frame(height: 24)
 
@@ -870,6 +987,7 @@ struct GroupPickView: View {
                             Text("普通组别").tag(0)
                             Text("四部合唱").tag(1)
                             Text("二部合唱").tag(2)
+                            Text("自定义").tag(3)
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
@@ -879,10 +997,16 @@ struct GroupPickView: View {
                         OptionBar("组数", hint: "全班共分成几个小组") {
                             NumberField(value: model.binding(\.groupPickTotal), suffix: "组", range: 2...16)
                         }
+                    } else if model.groupPickMode == 3 {
+                        OptionField("自定义选项（逗号或顿号分隔）") {
+                            TextField("例如：弦乐组, 管乐组, 打击乐组", text: model.binding(\.customGroupNames))
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: Type.body))
+                        }
                     }
 
                     OptionBar(model.groupPickMode == 0 ? "每次抽取" : "抽取数量",
-                              hint: model.groupPickMode == 0 ? "同时抽出几个组" : "同时抽出几个声部") {
+                              hint: model.groupPickMode == 0 ? "同时抽出几个组" : "同时抽出几个目标") {
                         NumberField(value: model.binding(\.groupPickCount),
                                     suffix: model.groupPickMode == 0 ? "组" : "个",
                                     range: 1...4)
@@ -1064,6 +1188,12 @@ struct CountdownView: View {
                                 model.setCountdown(seconds: max(5, m * 60 + $0))
                             }
                         ), suffix: "秒", range: 0...59)
+                    }
+
+                    OptionBar("最后 3 秒倒数提示音", hint: "3、2、1 轻柔滴答提醒收尾") {
+                        Toggle("", isOn: model.binding(\.countdownAlertSound))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
                     }
                 }
 

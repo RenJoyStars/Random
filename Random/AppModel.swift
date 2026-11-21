@@ -112,6 +112,78 @@ enum EffectLevel: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// 舞台主题色预设：仅影响舞台氛围光晕、徽标与 3D 物件细节，不破坏 macOS 原生系统色。
+enum StageAccent: String, CaseIterable, Identifiable, Sendable {
+    case system, royalBlue, amberGold, emerald, crimson, violet
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .system:    return "跟随系统"
+        case .royalBlue: return "学院蓝"
+        case .amberGold: return "琥珀金"
+        case .emerald:   return "翡翠绿"
+        case .crimson:   return "绯红"
+        case .violet:    return "紫罗兰"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .system:    return .accentColor
+        case .royalBlue: return Color(red: 0.16, green: 0.46, blue: 0.96)
+        case .amberGold: return Color(red: 0.88, green: 0.58, blue: 0.12)
+        case .emerald:   return Color(red: 0.14, green: 0.68, blue: 0.46)
+        case .crimson:   return Color(red: 0.88, green: 0.24, blue: 0.32)
+        case .violet:    return Color(red: 0.56, green: 0.34, blue: 0.92)
+        }
+    }
+}
+
+/// 硬币金属材质预设
+enum CoinStyle: String, CaseIterable, Identifiable, Sendable {
+    case silver, gold, bronze
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .silver: return "经典银币"
+        case .gold:   return "鎏金纪念币"
+        case .bronze: return "暖铜复古币"
+        }
+    }
+}
+
+/// 3D 骰子材质预设
+enum DiceStyle: String, CaseIterable, Identifiable, Sendable {
+    case ivory, obsidian, emerald, ruby
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .ivory:    return "象牙白"
+        case .obsidian: return "曜石黑"
+        case .emerald:  return "翡翠绿"
+        case .ruby:     return "宝石红"
+        }
+    }
+}
+
+/// 扑克牌背主题预设
+enum CardBackStyle: String, CaseIterable, Identifiable, Sendable {
+    case classicBlue, crimson, emerald, midnightGold
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .classicBlue:  return "经典蓝"
+        case .crimson:      return "皇家红"
+        case .emerald:      return "祖母绿"
+        case .midnightGold: return "暗夜金"
+        }
+    }
+}
+
 enum CelebrationTheme: String, CaseIterable, Identifiable, Sendable {
 
     // 经典：礼炮 / 烟花 / 星芒 / 光环
@@ -645,6 +717,36 @@ final class AppModel {
     /// 落定特效强度：完整 / 精简 / 关闭
     var effectLevel: EffectLevel = .full { didSet { persist() } }
 
+    /// 舞台主题色预设（仅影响舞台氛围与 3D 细节）
+    var stageAccent: StageAccent = .system { didSet { persist() } }
+    /// 开启 3D 透视景深与立体翻转动画（老设备可关掉退回轻快 2D）
+    var motion3D: Bool = true { didSet { persist() } }
+    /// 全工具落定特效：骰子、硬币、抽卡、颜色、猜拳获胜时同样触发庆祝粒子
+    var celebrationAllTools: Bool = true { didSet { persist() } }
+    /// 实物工具优先播放拟物落地声；关闭后全工具统一播放 25 种庆典落定音
+    var preferToolSettleSound: Bool = true {
+        didSet {
+            Sound.preferToolSettleSound = preferToolSettleSound
+            persist()
+        }
+    }
+
+    /// 各工具深度客制化外观与文案
+    var coinStyle: CoinStyle = .silver { didSet { persist() } }
+    var coinHeadsLabel: String = "正" { didSet { persist() } }
+    var coinTailsLabel: String = "反" { didSet { persist() } }
+    var diceStyle: DiceStyle = .ivory { didSet { persist() } }
+    var cardBackStyle: CardBackStyle = .classicBlue { didSet { persist() } }
+    var yesLabel: String = "是" { didSet { persist() } }
+    var noLabel: String = "否" { didSet { persist() } }
+    /// 自定义抽小组/声部名称（逗号或换行分隔，用于 groupPickMode == 3）
+    var customGroupNames: String = "第一排, 第二排, 第三排, 第四排" { didSet { persist() } }
+    /// 倒计时最后 3 秒发出倒数提示音
+    var countdownAlertSound: Bool = true { didSet { persist() } }
+
+    /// 实际生效的舞台强调色
+    var resolvedStageAccent: Color { stageAccent.color }
+
     /// 音效风格：`random` 或 `SoundTheme.rawValue`
     var soundStyle: String = SoundTheme.randomKey {
         didSet {
@@ -1081,6 +1183,13 @@ final class AppModel {
             return ["女高音 (Soprano)", "女低音 (Alto)", "男高音 (Tenor)", "男低音 (Bass)"]
         case 2:
             return ["高声部", "低声部"]
+        case 3:
+            let seps = CharacterSet(charactersIn: ",，、;\n")
+            let parsed = customGroupNames
+                .components(separatedBy: seps)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            return parsed.isEmpty ? ["自定义 A", "自定义 B"] : parsed
         default:
             let count = max(2, min(groupPickTotal, 16))
             return (1...count).map { "第 \($0) 组" }
@@ -1129,7 +1238,7 @@ final class AppModel {
             }
             if self.countdownRemaining > 1 {
                 self.countdownRemaining -= 1
-                if self.countdownRemaining <= 3 {
+                if self.countdownAlertSound && self.countdownRemaining <= 3 {
                     // 最后 3 秒发出轻柔倒数音（3、2、1）
                     Sound.shared.tick(Double(4 - self.countdownRemaining) / 3.0, .number)
                 }
@@ -1209,6 +1318,7 @@ final class AppModel {
         diceValues = Array(repeating: 1, count: max(1, min(diceCount, 8)))
         Sound.enabled = soundOn
         Sound.themeStyle = SoundTheme.resolve(soundStyle)
+        Sound.preferToolSettleSound = preferToolSettleSound
     }
 
     // MARK: - 持久化
@@ -1292,6 +1402,20 @@ final class AppModel {
         if let v = d["countdownTotal"] as? Int { countdownTotal = v; countdownRemaining = v }
         if let v = d["effectLevel"] as? String,
            let level = EffectLevel(rawValue: v) { effectLevel = level }
+        if let v = d["stageAccent"] as? String,
+           let a = StageAccent(rawValue: v) { stageAccent = a }
+        if let v = d["motion3D"] as? Bool { motion3D = v }
+        if let v = d["celebrationAllTools"] as? Bool { celebrationAllTools = v }
+        if let v = d["preferToolSettleSound"] as? Bool { preferToolSettleSound = v }
+        if let v = d["coinStyle"] as? String, let c = CoinStyle(rawValue: v) { coinStyle = c }
+        if let v = d["coinHeadsLabel"] as? String, !v.isEmpty { coinHeadsLabel = v }
+        if let v = d["coinTailsLabel"] as? String, !v.isEmpty { coinTailsLabel = v }
+        if let v = d["diceStyle"] as? String, let ds = DiceStyle(rawValue: v) { diceStyle = ds }
+        if let v = d["cardBackStyle"] as? String, let cb = CardBackStyle(rawValue: v) { cardBackStyle = cb }
+        if let v = d["yesLabel"] as? String, !v.isEmpty { yesLabel = v }
+        if let v = d["noLabel"] as? String, !v.isEmpty { noLabel = v }
+        if let v = d["customGroupNames"] as? String { customGroupNames = v }
+        if let v = d["countdownAlertSound"] as? Bool { countdownAlertSound = v }
     }
 
     /// 连续滑块防抖落盘：拖动字号/节奏/音量滑块时不每帧同步写盘，松手后 0.25 秒一次写入。
@@ -1316,6 +1440,19 @@ final class AppModel {
             "soundOn": soundOn,
             "celebrationStyle": celebrationStyle, "soundStyle": soundStyle,
             "effectLevel": effectLevel.rawValue,
+            "stageAccent": stageAccent.rawValue,
+            "motion3D": motion3D,
+            "celebrationAllTools": celebrationAllTools,
+            "preferToolSettleSound": preferToolSettleSound,
+            "coinStyle": coinStyle.rawValue,
+            "coinHeadsLabel": coinHeadsLabel,
+            "coinTailsLabel": coinTailsLabel,
+            "diceStyle": diceStyle.rawValue,
+            "cardBackStyle": cardBackStyle.rawValue,
+            "yesLabel": yesLabel,
+            "noLabel": noLabel,
+            "customGroupNames": customGroupNames,
+            "countdownAlertSound": countdownAlertSound,
             "drawnByClass": drawnByClass,
             "numMin": numMin, "numMax": numMax, "numCount": numCount, "numUnique": numUnique,
             "numNoRepeat": numNoRepeat, "numDrawn": numDrawn,
@@ -1633,6 +1770,7 @@ final class AppModel {
             Sound.shared.settle(.dice)
             self.diceRolling = false
             self.diceValues = final
+            if self.celebrationAllTools { self.cheer() }
             let text = final.count > 1
                 ? "\(final.map(String.init).joined(separator: " + ")) = \(final.reduce(0, +))"
                 : "\(final.first ?? 1)"
@@ -1655,8 +1793,9 @@ final class AppModel {
             self.coinRolling = false
             self.coinIsHeads = heads
             if heads { self.coinHeads += 1 } else { self.coinTails += 1 }
+            if self.celebrationAllTools { self.cheer() }
             self.persist()
-            self.logHistory(kind: Tool.coin.rawValue, text: heads ? "正面" : "反面")
+            self.logHistory(kind: Tool.coin.rawValue, text: heads ? self.coinHeadsLabel : self.coinTailsLabel)
         })
     }
 
@@ -1680,6 +1819,7 @@ final class AppModel {
             Sound.shared.settle(.card)
             self.cardRolling = false
             self.cards = final
+            if self.celebrationAllTools { self.cheer() }
             self.logHistory(kind: Tool.card.rawValue,
                             text: final.map(\.displayName).joined(separator: "、"))
         })
@@ -1699,6 +1839,7 @@ final class AppModel {
             Sound.shared.settle(.color)
             self.colorRolling = false
             self.applyColor(h: target.0, s: target.1, b: target.2)
+            if self.celebrationAllTools { self.cheer() }
             self.logHistory(kind: Tool.color.rawValue, text: self.colorHex)
         })
     }
@@ -1780,9 +1921,16 @@ final class AppModel {
             self.aiMove = ai
             let outcome: String
             switch move.versus(ai) {
-            case 1:  self.rpsWins += 1;   outcome = "你赢了"
-            case -1: self.rpsLosses += 1; outcome = "你输了"
-            default: self.rpsDraws += 1;  outcome = "平局"
+            case 1:
+                self.rpsWins += 1
+                outcome = "你赢了"
+                if self.celebrationAllTools { self.cheer() }
+            case -1:
+                self.rpsLosses += 1
+                outcome = "你输了"
+            default:
+                self.rpsDraws += 1
+                outcome = "平局"
             }
             self.persist()
             self.logHistory(kind: Tool.rockPaperScissors.rawValue,

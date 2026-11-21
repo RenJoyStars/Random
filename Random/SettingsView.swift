@@ -30,6 +30,23 @@ struct SettingsView: View {
                         .frame(width: 220)
                     }
 
+                    OptionBar("舞台主题色", hint: "仅作用于舞台光晕、徽标与 3D 细节") {
+                        Picker("舞台主题色", selection: model.binding(\.stageAccent)) {
+                            ForEach(StageAccent.allCases) { accent in
+                                Text(accent.title).tag(accent)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(maxWidth: 140)
+                    }
+
+                    OptionBar("3D 立体动效", hint: "滚筒、硬币、骰子与抽卡的 3D 透视翻转，老设备可关闭") {
+                        Toggle("", isOn: model.binding(\.motion3D))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                    }
+
                     OptionBar("舞台字号", hint: "投影大屏时只放大结果本身，不挤压操作区") {
                         HStack(spacing: 10) {
                             Slider(value: model.binding(\.stageScale), in: 0.8...1.6)
@@ -137,6 +154,13 @@ struct SettingsView: View {
                         }
                     }
 
+                    OptionBar("实物工具优先拟物声", hint: "关掉后骰子/硬币/抽卡等也统一播放 25 种庆典落定音") {
+                        Toggle("", isOn: model.binding(\.preferToolSettleSound))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .disabled(!model.soundOn)
+                    }
+
                     OptionBar("试听", hint: currentSoundName) {
                         Button("鼓点 + 落定音") { Sound.shared.preview() }
                             .controlSize(.small)
@@ -182,6 +206,12 @@ struct SettingsView: View {
                         .pickerStyle(.menu)
                         .labelsHidden()
                         .frame(maxWidth: 160)
+                    }
+
+                    OptionBar("全工具落定特效", hint: "骰子、硬币、抽卡、颜色与猜拳获胜时同样触发粒子特效") {
+                        Toggle("", isOn: model.binding(\.celebrationAllTools))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
                     }
                 }
 

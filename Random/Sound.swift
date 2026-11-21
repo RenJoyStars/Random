@@ -195,6 +195,8 @@ final class Sound {
 
     /// 落定音风格。nil = 每次现场随机。
     static var themeStyle: SoundTheme?
+    /// 实物工具（骰子/硬币/牌/猜拳/颜色）优先用拟物落地声；关掉后全部工具统一播放 25 种庆典落定音。
+    static var preferToolSettleSound: Bool = true
     /// 抽取鼓点音色（0 木鼓 / 1 电子 / 2 心跳）。nil = 每轮随机。
     static var drumStyle: Int?
 
@@ -377,12 +379,12 @@ final class Sound {
         play(list[i])
     }
 
-    /// 落定：实物类工具用自己的落地声，抽象抽取用设置里的 25 种落定音。
+    /// 落定：实物类工具默认用自己的拟物落地声（可在设置中切换为 25 种庆典落定音），抽象抽取用设置里的 25 种落定音。
     ///
     /// 点名不要走这里 —— 它要配合语音播报，由 AppModel 显式调 `victory()`。
     func settle(_ tool: ToolSound) {
         guard Sound.enabled else { return }
-        if tool.hasOwnSettle, let b = toolSettle(tool) {
+        if Sound.preferToolSettleSound, tool.hasOwnSettle, let b = toolSettle(tool) {
             play(b)
         } else {
             victory()

@@ -1,24 +1,24 @@
 import SwiftUI
 
-// MARK: - 工具专属动效（3.3）
+// MARK: - 工具专属 3D 立体动效（3.5+）
 //
-// 3.2 之前，十个工具的「过程」长得都一样：数字闪一下、结果跳一下。
-// 骰子不该像老虎机，硬币不该像计数器。
+// 原则：**照着真实世界里的物理质感与 3D 透视去动**，同时可通过 `model.motion3D`
+// 一键在「3D 景深立体」与「轻量 2D」之间平滑切换，兼顾教室老电脑投影性能。
 //
-// 原则只有一条：**照着那个东西在现实里怎么动**。
-//   · 硬币绕水平轴翻 → 投影到屏幕上就是「高度压缩 + 换面」
-//   · 骰子在桌上滚  → 轻微乱晃 + 落地砸一下
-//   · 抽卡是发牌    → 牌背翻成正面的那一下
-//   · 猜拳是手      → 预备时上下晃，落定时推出去
-//   · 点名是花名册  → 纵向滚轮，一列名字往上走
+//   · 滚筒文字    → X 轴 3D 圆柱翻转（翻页钟/滚筒手感）
+//   · 硬币        → 3D 金属厚度边 + 无镜像抛物线翻转 + 3 种金属材质 + 动态扫光
+//   · 骰子        → X/Y/Z 三轴 3D 立体翻滚 + 4 种材质皮肤 + 落桌投影弹跳
+//   · 抽卡        → 3D 弧形扇面洗牌 + 真 Y 轴 0°→90°/-90°→0° 无镜像立体翻牌 + 4 款牌背
+//   · 猜拳        → 3D 俯仰蓄力 + 出拳冲刺光环
+//   · 颜色        → 3D 悬停倾角色卡 + 双层扩散光环
+//   · 分组 / 顺序 → 3D 桌面牌堆洗牌与立体排名揭晓
+//   · 是或否      → 3D 天平举棋不定摇摆
 
-// MARK: - 老虎机滚轮
+// MARK: - 3D 滚筒文字
 
-/// 一段文字向上滚出、下一段从下方滚入。
-///
-/// 为什么不用 `contentTransition(.numericText())`：那个只对数字有滚动感，
-/// 中文字母会变成淡入淡出；而点名滚动时屏幕上应该是「一列名字往上走」。
+/// 一段文字沿 3D 滚筒向上翻出、下一段从下方翻入。
 struct SlotRoller<Content: View>: View {
+    @Environment(AppModel.self) private var model
     let value: String
     /// 一次切换滚过的距离（≈ 字号的一半最自然）
     var distance: CGFloat = 28
@@ -35,10 +35,20 @@ struct SlotRoller<Content: View>: View {
                 content(previous)
                     .offset(y: -distance * progress)
                     .opacity(1 - progress)
+                    .rotation3DEffect(
+                        .degrees(model.motion3D ? -34 * progress : 0),
+                        axis: (x: 1, y: 0, z: 0),
+                        perspective: 0.55
+                    )
             }
             content(value)
                 .offset(y: distance * (1 - progress))
                 .opacity(progress)
+                .rotation3DEffect(
+                    .degrees(model.motion3D ? 34 * (1 - progress) : 0),
+                    axis: (x: 1, y: 0, z: 0),
+                    perspective: 0.55
+                )
         }
         .clipped()
         .onChange(of: value) { old, _ in
@@ -49,25 +59,20 @@ struct SlotRoller<Content: View>: View {
     }
 }
 
-// MARK: - 硬币
+// MARK: - 3D 金属硬币
 
-/// 一枚会翻的硬币。
+/// 一枚带 3D 金属厚边与三种材质皮肤的硬币。
 ///
-/// 翻转用「纵向压缩」而不是 `rotation3DEffect`：绕水平轴转 θ 时，
-/// 投影到屏幕上的高度正好是 cos(θ)，宽度不变 —— 压缩才是它在屏幕上的真实样子。
-/// 用 3D 旋转还有个副作用：转过 180° 时文字是镜像的，落定后「反」字会反着写。
+/// 翻转主体沿用无镜像的「纵向压缩 cos(θ) + 换面」，并在 3D 模式下叠加多层金属侧边厚度
+/// 与微倾角透视，既呈现真实 3D 金属质感，又绝不会出现文字镜像反写。
 struct CoinStage: View {
     @Environment(AppModel.self) private var model
 
-    /// 滚动中的连续压缩（模拟越转越慢时的边缘视角）
     @State private var spinSquash: CGFloat = 1
-    /// 落地那一下的挤压
     @State private var landSquash: CGFloat = 1
-    /// 抛起的高度（负值 = 向上）
     @State private var lift: CGFloat = 0
-    /// 落地后左右摇晃
     @State private var wobble: Double = 0
-    /// 旋转时扫过币面的反光强度
+    @State private var tiltX: Double = 0
     @State private var shine: Double = 0
     @State private var task: Task<Void, Never>?
 
@@ -76,31 +81,62 @@ struct CoinStage: View {
 
     private var label: String {
         guard let face else { return "?" }
-        return face ? "正" : "反"
+        return face ? model.coinHeadsLabel : model.coinTailsLabel
     }
 
-    private var tint: Color {
-        // 刻字是压印不是彩色：币面上"正/反"应该是同色调的浮雕。
-        // 用蓝色会让它变成一枚"App 图标"，而不是一枚硬币。
-        face == nil ? Color(white: 0.55) : Color(white: 0.30)
+    private var palette: (light: Color, mid: Color, dark: Color, edge: Color, ink: Color, glow: Color) {
+        switch model.coinStyle {
+        case .gold:
+            return (
+                Color(red: 1.00, green: 0.93, blue: 0.64),
+                Color(red: 0.92, green: 0.72, blue: 0.22),
+                Color(red: 0.64, green: 0.44, blue: 0.08),
+                Color(red: 0.52, green: 0.34, blue: 0.05),
+                Color(red: 0.42, green: 0.25, blue: 0.02),
+                Color(red: 0.95, green: 0.72, blue: 0.16)
+            )
+        case .bronze:
+            return (
+                Color(red: 0.96, green: 0.80, blue: 0.64),
+                Color(red: 0.78, green: 0.50, blue: 0.30),
+                Color(red: 0.48, green: 0.27, blue: 0.14),
+                Color(red: 0.38, green: 0.20, blue: 0.10),
+                Color(red: 0.30, green: 0.15, blue: 0.07),
+                Color(red: 0.82, green: 0.50, blue: 0.26)
+            )
+        case .silver:
+            return (
+                Color(white: 0.97),
+                Color(white: 0.84),
+                Color(white: 0.62),
+                Color(white: 0.46),
+                face == nil ? Color(white: 0.52) : Color(white: 0.28),
+                model.resolvedStageAccent
+            )
+        }
     }
 
     var body: some View {
         VStack(spacing: 16) {
             ZStack {
-                // 桌面阴影：硬币飞起来时变小变淡，这是「它离桌面有多高」唯一的线索
+                // 桌面动态投影：硬币抛高时投影缩小淡化，落地时收实
                 Ellipse()
-                    .fill(Color.black.opacity(0.16))
-                    .frame(width: 92 + lift * 0.30, height: 10)
-                    .blur(radius: 3.5)
+                    .fill(Color.black.opacity(max(0.06, 0.20 + Double(lift) * 0.0014)))
+                    .frame(width: max(46, 98 + lift * 0.38), height: 11)
+                    .blur(radius: 4)
                     .offset(y: 78)
 
-                coin
+                coinBody
                     .rotationEffect(.degrees(wobble))
-                    .scaleEffect(x: 1, y: max(0.04, spinSquash * landSquash), anchor: .center)
+                    .rotation3DEffect(
+                        .degrees(model.motion3D ? tiltX : 0),
+                        axis: (x: 1, y: 0.18, z: 0),
+                        perspective: 0.55
+                    )
+                    .scaleEffect(x: 1, y: max(0.05, spinSquash * landSquash), anchor: .center)
                     .offset(y: lift)
             }
-            .frame(height: 178)
+            .frame(height: 184)
 
             StageCaption(text: caption)
         }
@@ -113,72 +149,82 @@ struct CoinStage: View {
     private var caption: String {
         if rolling { return "硬币在空中翻转…" }
         guard let face else { return "点「抛硬币」开始" }
-        return face ? "正面朝上" : "反面朝上"
+        return face ? "结果：\(model.coinHeadsLabel)" : "结果：\(model.coinTailsLabel)"
     }
 
-    private var coin: some View {
-        ZStack {
-            // 币身：左上打光的银色金属。中心亮斑别太"塑料"，
-            // 真硬币的高光是漫开的，不是一个小白点。
+    private var coinBody: some View {
+        let p = palette
+        return ZStack {
+            // 3D 金属厚度侧边（多层错位圆盘叠出真实硬币边缘厚度）
+            if model.motion3D {
+                ForEach((1...4).reversed(), id: \.self) { layer in
+                    Circle()
+                        .fill(p.edge.opacity(0.92 - Double(layer) * 0.08))
+                        .frame(width: 126, height: 126)
+                        .offset(y: CGFloat(layer) * 1.6)
+                }
+            }
+
+            // 币面本体
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [Color(white: 0.97), Color(white: 0.84), Color(white: 0.63)],
-                        center: UnitPoint(x: 0.36, y: 0.28),
+                        colors: [p.light, p.mid, p.dark],
+                        center: UnitPoint(x: 0.34, y: 0.26),
                         startRadius: 8,
-                        endRadius: 92)
+                        endRadius: 94)
                 )
                 .overlay {
-                    Circle().strokeBorder(Color.black.opacity(0.16), lineWidth: 1)
+                    Circle().strokeBorder(Color.black.opacity(0.18), lineWidth: 1)
                 }
                 .overlay {
                     // 币缘齿纹
                     Circle()
-                        .strokeBorder(Color.white.opacity(0.42),
+                        .strokeBorder(Color.white.opacity(0.45),
                                       style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 3]))
                         .padding(7)
                 }
                 .overlay {
-                    // 内圈压印区：一条浅凹线 + 一条深凹线，
-                    // 硬币的「面」和「边」就是这样分开的
+                    // 内圈压印槽
                     Circle()
-                        .strokeBorder(Color.black.opacity(0.09), lineWidth: 1)
+                        .strokeBorder(Color.black.opacity(0.11), lineWidth: 1)
                         .padding(17)
                 }
                 .overlay {
                     Circle()
-                        .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.8)
+                        .strokeBorder(Color.white.opacity(0.38), lineWidth: 0.8)
                         .padding(18.5)
                 }
 
-            // 旋转时扫过的一道反光。硬币在转，光斑跟着挪，才有金属感。
+            // 旋转时扫过的金属高光带
             Circle()
                 .fill(
                     AngularGradient(
                         gradient: Gradient(colors: [
                             .white.opacity(0),
-                            .white.opacity(0.55 * shine),
+                            .white.opacity(0.60 * shine),
                             .white.opacity(0)
                         ]),
                         center: .center,
-                        startAngle: .degrees(shine * 420),
-                        endAngle: .degrees(shine * 420 + 80))
+                        startAngle: .degrees(shine * 440),
+                        endAngle: .degrees(shine * 440 + 85))
                 )
                 .blendMode(.plusLighter)
                 .allowsHitTesting(false)
 
-            // 压印：字下压一层白、字上盖深灰，读起来像刻进去的
+            // 压印浮雕文字（支持 1~3 字自定义文案，自动缩放防溢出）
             Text(label)
-                .font(.system(size: 50, weight: .heavy, design: .rounded))
-                .foregroundStyle(tint)
-                .shadow(color: .white.opacity(0.85), radius: 0.5, y: 1)
+                .font(.system(size: label.count > 1 ? 34 : 50, weight: .heavy, design: .rounded))
+                .minimumScaleFactor(0.45)
+                .lineLimit(1)
+                .padding(.horizontal, 20)
+                .foregroundStyle(p.ink)
+                .shadow(color: .white.opacity(0.80), radius: 0.5, y: 1)
         }
-        .frame(width: 124, height: 124)
-        // 结果出来时不再套一圈蓝色描边 —— 那会让它变成一枚「App 图标」。
-        // 用一圈散开的柔光表示「这枚已经落定了」，币面本身还是纯金属。
-        .shadow(color: Color.accentColor.opacity(face == nil ? 0 : 0.22),
-                radius: face == nil ? 0 : 15)
-        .shadow(color: .black.opacity(0.16), radius: 10, y: 6)
+        .frame(width: 126, height: 126)
+        .shadow(color: p.glow.opacity(face == nil ? 0 : 0.28),
+                radius: face == nil ? 0 : 18)
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 6)
     }
 
     private func launch() {
@@ -186,91 +232,143 @@ struct CoinStage: View {
         shine = 0
         wobble = 0
         landSquash = 1
+        tiltX = 0
 
-        // 抛起来
-        withAnimation(.easeOut(duration: 0.30)) { lift = -78 }
-        // 翻转：18 → 100 → 18 的压缩，一轮约 0.2 秒；用 repeatForever，
-        // 落定时再打断 —— 这就是硬币在空中越转越慢的那段。
+        withAnimation(.easeOut(duration: 0.30)) {
+            lift = -82
+            tiltX = 24
+        }
         spinSquash = 1
-        withAnimation(.easeInOut(duration: 0.20).repeatForever(autoreverses: true)) {
-            spinSquash = 0.16
+        withAnimation(.easeInOut(duration: 0.18).repeatForever(autoreverses: true)) {
+            spinSquash = 0.14
         }
         withAnimation(.linear(duration: 0.9)) { shine = 1 }
 
         task = Task {
             try? await Task.sleep(for: .seconds(0.30))
             guard !Task.isCancelled else { return }
-            withAnimation(.easeIn(duration: 0.34)) { lift = 0 }
+            withAnimation(.easeIn(duration: 0.34)) {
+                lift = 0
+                tiltX = -10
+            }
         }
     }
 
     private func settleDown() {
         task?.cancel()
 
-        // 打断 repeatForever：直接覆盖成 1，不留残余动画
         withAnimation(.linear(duration: 0.06)) { spinSquash = 1 }
         shine = 0
         lift = 0
 
-        // 落地挤压 + 回弹
-        landSquash = 0.82
-        withAnimation(.interpolatingSpring(stiffness: 320, damping: 8)) { landSquash = 1 }
+        landSquash = 0.80
+        withAnimation(.interpolatingSpring(stiffness: 320, damping: 8)) {
+            landSquash = 1
+            tiltX = 0
+        }
 
-        // 摇晃三下就停：真实硬币落地会晃，但不会一直晃
         task = Task {
-            for amp in [4.5, -3.4, 2.4, -1.5, 0.0] {
-                withAnimation(.easeInOut(duration: 0.085)) { wobble = amp }
-                try? await Task.sleep(for: .milliseconds(85))
+            for amp in [5.0, -3.6, 2.2, -1.2, 0.0] {
+                withAnimation(.easeInOut(duration: 0.08)) { wobble = amp }
+                try? await Task.sleep(for: .milliseconds(80))
                 guard !Task.isCancelled else { return }
             }
         }
     }
 }
 
-// MARK: - 骰子
+// MARK: - 3D 立体骰子
 
-/// 会滚、会砸的骰子组。
+/// 会滚、会砸、带三轴 3D 翻滚与桌面投影的骰子组。
 struct DiceStage: View {
+    @Environment(AppModel.self) private var model
     let values: [Int]
     let faces: Int
     let rolling: Bool
 
     @State private var thump: CGFloat = 1
+    @State private var settleTilt: Double = 0
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 50, paused: !rolling)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
-            HStack(spacing: 14) {
+            HStack(spacing: values.count > 5 ? 10 : 16) {
                 ForEach(Array(values.enumerated()), id: \.offset) { i, v in
-                    DieFace(value: v, faces: faces)
-                        // 每颗骰子的相位错开，才不会像齐步走
-                        .offset(x: rolling ? sin(t * 17 + Double(i) * 2.1) * 5.5 : 0,
-                                y: rolling ? cos(t * 23 + Double(i) * 1.4) * 4.5 : 0)
-                        .rotationEffect(.degrees(rolling ? sin(t * 15 + Double(i) * 1.7) * 11 : 0))
-                        .blur(radius: rolling ? 0.7 : 0)
-                        .scaleEffect(thump)
+                    let phase = Double(i) * 1.9
+                    let bounceY = rolling ? abs(sin(t * 14 + phase)) * -16 : 0
+                    let rx = rolling && model.motion3D ? sin(t * 16 + phase) * 38 : settleTilt
+                    let ry = rolling && model.motion3D ? cos(t * 19 + phase * 1.3) * 42 : 0
+                    let rz = rolling ? sin(t * 13 + phase) * 14 : 0
+
+                    VStack(spacing: 6) {
+                        DieFace(value: v, faces: faces, style: model.diceStyle)
+                            .rotationEffect(.degrees(rz))
+                            .rotation3DEffect(.degrees(rx), axis: (x: 1, y: 0, z: 0), perspective: 0.52)
+                            .rotation3DEffect(.degrees(ry), axis: (x: 0, y: 1, z: 0), perspective: 0.52)
+                            .offset(x: rolling ? sin(t * 17 + phase) * 5.0 : 0, y: bounceY)
+                            .blur(radius: rolling ? 0.5 : 0)
+                            .scaleEffect(thump)
+
+                        // 动态桌面投影
+                        Ellipse()
+                            .fill(Color.black.opacity(rolling ? 0.10 : 0.18))
+                            .frame(width: max(28, 52 + bounceY * 0.9), height: 6)
+                            .blur(radius: 2.5)
+                    }
                 }
             }
             .frame(maxWidth: .infinity)
+            .padding(.top, 10)
         }
         .onChange(of: rolling) { _, r in
             guard !r else { return }
-            // 落桌：放大一下再弹回去
-            thump = 1.15
-            withAnimation(.interpolatingSpring(stiffness: 320, damping: 9)) { thump = 1 }
+            thump = 1.16
+            settleTilt = model.motion3D ? -14 : 0
+            withAnimation(.interpolatingSpring(stiffness: 320, damping: 9)) {
+                thump = 1
+                settleTilt = 0
+            }
         }
     }
 }
 
-// MARK: - 抽卡
+// MARK: - 3D 抽卡与扇形发牌
 
-/// 牌背：深色底 + 细网格 + 内框，像一副真牌。
+/// 牌背：4 款高级主题皮肤（经典蓝 / 皇家红 / 祖母绿 / 暗夜金），带细密斜纹与双层金线框。
 struct CardBack: View {
     var width: CGFloat = 100
+    var style: CardBackStyle = .classicBlue
+
+    private var colors: (top: Color, bottom: Color, foil: Color, line: Color) {
+        switch style {
+        case .classicBlue:
+            return (Color(red: 0.16, green: 0.44, blue: 0.92),
+                    Color(red: 0.08, green: 0.24, blue: 0.64),
+                    Color.white.opacity(0.92),
+                    Color.white.opacity(0.24))
+        case .crimson:
+            return (Color(red: 0.78, green: 0.14, blue: 0.22),
+                    Color(red: 0.46, green: 0.06, blue: 0.12),
+                    Color(red: 1.00, green: 0.88, blue: 0.58),
+                    Color(red: 1.00, green: 0.86, blue: 0.52).opacity(0.25))
+        case .emerald:
+            return (Color(red: 0.08, green: 0.54, blue: 0.38),
+                    Color(red: 0.04, green: 0.30, blue: 0.22),
+                    Color(red: 0.95, green: 0.90, blue: 0.68),
+                    Color.white.opacity(0.22))
+        case .midnightGold:
+            return (Color(red: 0.18, green: 0.19, blue: 0.26),
+                    Color(red: 0.09, green: 0.10, blue: 0.15),
+                    Color(red: 0.96, green: 0.78, blue: 0.36),
+                    Color(red: 0.96, green: 0.78, blue: 0.36).opacity(0.24))
+        }
+    }
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 11, style: .continuous)
-            .fill(Color.accentColor.opacity(0.88))
+        let c = colors
+        let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
+        shape
+            .fill(LinearGradient(colors: [c.top, c.bottom], startPoint: .topLeading, endPoint: .bottomTrailing))
             .overlay {
                 GeometryReader { geo in
                     let step: CGFloat = 7
@@ -282,59 +380,93 @@ struct CardBack: View {
                             x += step
                         }
                     }
-                    .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                    .stroke(c.line, lineWidth: 0.9)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .clipShape(shape)
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.55), lineWidth: 0.5)
-                    .padding(7)
+                    .strokeBorder(c.foil.opacity(0.60), lineWidth: 0.8)
+                    .padding(6)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(c.foil.opacity(0.30), lineWidth: 0.5)
+                    .padding(9)
             }
             .overlay {
                 Image(systemName: "suit.spade.fill")
                     .font(.system(size: width * 0.26))
-                    .foregroundStyle(Color.white.opacity(0.9))
+                    .foregroundStyle(c.foil)
+                    .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+            }
+            .overlay {
+                shape.strokeBorder(Color.white.opacity(0.22), lineWidth: 0.6)
             }
             .frame(width: width, height: width * 1.42)
-            .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
+            .shadow(color: .black.opacity(0.22), radius: 6, y: 3)
     }
 }
 
-/// 抽卡舞台：滚动时是一叠牌背，落定时逐张翻成正面。
+/// 3D 抽卡舞台：洗牌时扇形牌背错落起伏，落定时逐张真 3D Y 轴无镜像翻转揭晓。
 struct CardStage: View {
+    @Environment(AppModel.self) private var model
     let cards: [PlayingCard]
-    /// 滚动中要显示几张牌背（= 这次要抽几张）
     let count: Int
     let rolling: Bool
-    /// 第几轮。每轮都重新播一次翻牌 —— 否则第二次抽牌会「凭空出现」。
     var round: Int = 0
     var width: CGFloat = 90
 
-    private var shownWidth: CGFloat { cards.count > 4 ? 64 : width }
+    private var shownWidth: CGFloat {
+        let n = rolling ? count : cards.count
+        if n > 6 { return 56 }
+        if n > 4 { return 68 }
+        return width
+    }
 
     var body: some View {
         Group {
             if rolling || cards.isEmpty {
-                // 洗牌：几张牌背错开一点，轻轻晃
-                HStack(spacing: 10) {
-                    ForEach(0..<max(1, min(count, 10)), id: \.self) { i in
-                        CardBack(width: shownWidth)
-                            .rotationEffect(.degrees(Double(i - count / 2) * 1.2))
-                            .offset(y: CGFloat(i % 2 == 0 ? -3 : 3))
+                TimelineView(.animation(minimumInterval: 1.0 / 45, paused: !rolling)) { ctx in
+                    let t = ctx.date.timeIntervalSinceReferenceDate
+                    let n = max(1, min(count, 10))
+                    let mid = Double(n - 1) / 2.0
+                    HStack(spacing: n > 5 ? -10 : 8) {
+                        ForEach(0..<n, id: \.self) { i in
+                            let delta = Double(i) - mid
+                            let wave = rolling ? sin(t * 10 + Double(i) * 0.8) : 0
+                            CardBack(width: shownWidth, style: model.cardBackStyle)
+                                .rotationEffect(.degrees(delta * (n > 3 ? 3.2 : 2.0) + wave * 2.5))
+                                .rotation3DEffect(
+                                    .degrees(model.motion3D ? delta * 6 + wave * 10 : 0),
+                                    axis: (x: 0.15, y: 1, z: 0),
+                                    perspective: 0.55
+                                )
+                                .offset(y: CGFloat(abs(delta) * 2.5) + CGFloat(wave * 5))
+                        }
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
                 }
-                .frame(maxWidth: .infinity)
                 .transition(.opacity)
             } else {
-                HStack(spacing: 10) {
+                let n = cards.count
+                let mid = Double(n - 1) / 2.0
+                HStack(spacing: n > 5 ? 6 : 10) {
                     ForEach(Array(cards.enumerated()), id: \.offset) { i, card in
-                        FlippingCard(card: card, width: shownWidth,
-                                     delay: Double(i) * 0.065)
+                        let delta = Double(i) - mid
+                        FlippingCard(card: card,
+                                     width: shownWidth,
+                                     backStyle: model.cardBackStyle,
+                                     motion3D: model.motion3D,
+                                     fanAngle: n > 1 ? delta * (n > 4 ? 2.2 : 3.0) : 0,
+                                     delay: Double(i) * 0.07)
+                            .offset(y: CGFloat(abs(delta) * 2.0))
                             .id(round &* 100 &+ i)
                     }
                 }
                 .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
                 .transition(.opacity)
             }
         }
@@ -342,18 +474,19 @@ struct CardStage: View {
     }
 }
 
-/// 一张从背面翻到正面的牌。
-///
-/// 用两段「立起来 —— 展开」而不是旋转角度：
-/// 水平方向压到 0 的时候，观众看到的就是牌侧对着自己，
-/// 这个时刻换面，任何角度都不会露馅（也不需要拿到动画中间值）。
+/// 一张带真 3D Y 轴透视翻转的扑克牌（0°→90° 背面隐去，-90°→0° 正面展平，绝不镜像）。
 private struct FlippingCard: View {
     let card: PlayingCard
     let width: CGFloat
+    let backStyle: CardBackStyle
+    let motion3D: Bool
+    let fanAngle: Double
     let delay: Double
 
     @State private var flipped = false
-    @State private var squashX: CGFloat = 1
+    @State private var angle: Double = 0
+    @State private var lift: CGFloat = 0
+    @State private var hovering = false
     @State private var flipTask: Task<Void, Never>?
 
     var body: some View {
@@ -361,32 +494,48 @@ private struct FlippingCard: View {
             if flipped {
                 PlayingCardView(card: card, width: width)
             } else {
-                CardBack(width: width)
+                CardBack(width: width, style: backStyle)
             }
         }
-        .scaleEffect(x: max(0.03, squashX), y: 1)
+        .rotation3DEffect(
+            .degrees(motion3D ? angle : 0),
+            axis: (x: 0, y: 1, z: 0),
+            perspective: 0.48
+        )
+        .scaleEffect(x: motion3D ? 1 : max(0.03, abs(cos(angle * .pi / 180))), y: 1)
+        .rotationEffect(.degrees(hovering ? 0 : fanAngle))
+        .offset(y: lift + (hovering ? -6 : 0))
+        .scaleEffect(hovering ? 1.06 : 1.0)
+        .zIndex(hovering ? 10 : 0)
+        .animation(.snappy(duration: 0.18), value: hovering)
+        .onHover { hovering = $0 }
         .onAppear {
             flipTask?.cancel()
-            squashX = 1
-            withAnimation(.easeIn(duration: 0.11).delay(delay)) { squashX = 0.03 }
+            flipped = false
+            angle = 0
+            lift = 0
+            withAnimation(.easeIn(duration: 0.13).delay(delay)) {
+                angle = 90
+                lift = -12
+            }
             flipTask = Task {
-                try? await Task.sleep(for: .seconds(delay + 0.11))
+                try? await Task.sleep(for: .seconds(delay + 0.13))
                 guard !Task.isCancelled else { return }
                 flipped = true
-                withAnimation(.easeOut(duration: 0.13)) { squashX = 1 }
+                angle = -90
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
+                    angle = 0
+                    lift = 0
+                }
             }
         }
         .onDisappear { flipTask?.cancel() }
     }
 }
 
-// MARK: - 猜拳
+// MARK: - 3D 猜拳
 
-/// 出拳按钮。
-///
-/// 原来三个都是 `.borderedProminent`，一屏三个同样重的蓝块，
-/// 比上面正在出拳的两只手还抢眼。原生 macOS 里强调色只给「这一屏唯一要做的事」，
-/// 这里三选一不是唯一 —— 所以平时灰底细边，指针移上去才亮。
+/// 出拳按钮：原生灰底细边，悬停微抬升并亮强调色边框。
 struct MoveButton: View {
     let move: RPS
     let disabled: Bool
@@ -421,16 +570,17 @@ struct MoveButton: View {
             .contentShape(shape)
         }
         .buttonStyle(.plain)
+        .scaleEffect(hovering && !disabled ? 1.02 : 1.0)
+        .animation(.snappy(duration: 0.15), value: hovering)
         .disabled(disabled)
         .opacity(disabled ? 0.45 : 1)
         .onHover { hovering = $0 }
     }
 }
 
-/// 猜拳舞台：两只手 + 胜负。
-///
-/// 「手」不用图标 —— 图标是符号，emoji 是手。学生一眼认的是那个 ✊。
+/// 3D 猜拳舞台：两只手带 X 轴透视蓄力俯仰，落定瞬间向前冲刺。
 struct RPSStage: View {
+    @Environment(AppModel.self) private var model
     let myMove: RPS?
     let aiMove: RPS?
     let rolling: Bool
@@ -440,13 +590,15 @@ struct RPSStage: View {
         VStack(spacing: 12) {
             HStack(alignment: .center, spacing: 0) {
                 HandColumn(title: "你", move: myMove, rolling: rolling,
-                           highlight: true, swingPhase: 0)
+                           highlight: true, winner: resultText == "你赢了",
+                           motion3D: model.motion3D, swingPhase: 0)
                 Text("VS")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.tertiary)
                     .frame(width: 52)
                 HandColumn(title: "电脑", move: aiMove, rolling: rolling,
-                           highlight: false, swingPhase: .pi)
+                           highlight: false, winner: resultText == "你输了",
+                           motion3D: model.motion3D, swingPhase: .pi)
             }
 
             Text(resultText)
@@ -465,6 +617,8 @@ private struct HandColumn: View {
     let move: RPS?
     let rolling: Bool
     let highlight: Bool
+    let winner: Bool
+    let motion3D: Bool
     let swingPhase: Double
 
     @State private var push: CGFloat = 1
@@ -481,20 +635,29 @@ private struct HandColumn: View {
 
                 ZStack {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(highlight
-                              ? Color.accentColor.opacity(0.13)
-                              : Color.primary.opacity(0.05))
+                        .fill(winner
+                              ? Color.green.opacity(0.14)
+                              : (highlight ? Color.accentColor.opacity(0.13) : Color.primary.opacity(0.05)))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .strokeBorder(winner ? Color.green.opacity(0.45) : Color.clear, lineWidth: 1.2)
+                        }
 
                     if let move {
                         VStack(spacing: 1) {
                             Text(move.glyph)
-                                .font(.system(size: 40))
+                                .font(.system(size: 42))
                             Text(move.title)
                                 .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
                         }
-                        .offset(y: swing * 7)
-                        .rotationEffect(.degrees(swing * 5))
+                        .offset(y: swing * 8)
+                        .rotationEffect(.degrees(swing * 6))
+                        .rotation3DEffect(
+                            .degrees(motion3D ? swing * 22 : 0),
+                            axis: (x: 1, y: 0, z: 0),
+                            perspective: 0.55
+                        )
                     } else {
                         Text("?")
                             .font(.system(size: 30, weight: .bold))
@@ -502,14 +665,13 @@ private struct HandColumn: View {
                             .offset(y: swing * 5)
                     }
                 }
-                .frame(height: 108)
+                .frame(height: 110)
                 .scaleEffect(push)
             }
         }
         .frame(maxWidth: .infinity)
         .onChange(of: rolling) { _, r in
             guard !r else { return }
-            // 出拳：手往前推一下。电脑稍慢半拍，才有「同时出」的错觉。
             let d = highlight ? 0.0 : 0.09
             push = 1.18
             withAnimation(.spring(response: 0.28, dampingFraction: 0.55).delay(d)) { push = 1 }
@@ -517,10 +679,8 @@ private struct HandColumn: View {
     }
 }
 
-// MARK: - 滚轮文字
+// MARK: - 滚轮文字封装
 
-/// 大号滚动数字。复刻 `BigNumber` 的排版，但每次换值都是「往上滚一格」，
-/// 而不是原地淡入淡出 —— 计数器/老虎机的手感全在这个位移上。
 struct RollingNumber: View {
     let text: String
     var size: CGFloat = 132
@@ -540,15 +700,11 @@ struct RollingNumber: View {
     }
 }
 
-/// 「07 号」：数字滚动，「号」字不动。号字跟着滚会显得整块在抖。
 struct RollingNumberUnit: View {
     let text: String
     var size: CGFloat = 132
 
     var body: some View {
-        // 不能用 .firstTextBaseline：SlotRoller 为了裁切给了固定高度，
-        // 这个容器没有文字基线，对齐会失效（「号」会被顶到下面去）。
-        // 改用底对齐 + 一点补偿 —— 数字的视觉下沿比行框高一点。
         HStack(alignment: .bottom, spacing: 3) {
             SlotRoller(value: text, distance: size * 0.30, duration: 0.085) { v in
                 Text(v)
@@ -567,7 +723,6 @@ struct RollingNumberUnit: View {
     }
 }
 
-/// 姓名的一行：滚动时一个个名字往上走，就是花名册被快速翻过去的样子。
 struct RollingNames: View {
     let text: String
     var size: CGFloat = 22
@@ -585,46 +740,68 @@ struct RollingNames: View {
     }
 }
 
+// MARK: - 3D 随机颜色
 
-// MARK: - 随机颜色
-
-/// 颜色舞台：色块落定时向外扩一圈同色光环。
+/// 颜色舞台：色块悬停 3D 微倾，落定双层同色光环向外扩散。
 struct ColorStage: View {
+    @Environment(AppModel.self) private var model
     let color: Color
     let hex: String
     let rgbText: String
     let hsbText: String
     let rolling: Bool
-    /// 每换一次颜色 +1，用来触发脉冲
     let pulse: Int
 
     @State private var ring: CGFloat = 0
     @State private var breathe: CGFloat = 1
+    @State private var hovering = false
 
     var body: some View {
         VStack(spacing: 14) {
             ZStack {
-                // 外扩的光环：只在落定那一刻出现
+                // 双层同色扩散光环
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(color.opacity(0.55 * (1 - ring)), lineWidth: 2)
-                    .frame(height: 108)
+                    .frame(height: 110)
                     .frame(maxWidth: 320)
-                    .scaleEffect(x: 1 + ring * 0.10, y: 1 + ring * 0.28)
+                    .scaleEffect(x: 1 + ring * 0.12, y: 1 + ring * 0.32)
                     .opacity(ring > 0 && ring < 1 ? 1 : 0)
+
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(color.opacity(0.32 * (1 - ring)), lineWidth: 1.5)
+                    .frame(height: 110)
+                    .frame(maxWidth: 320)
+                    .scaleEffect(x: 1 + ring * 0.22, y: 1 + ring * 0.48)
+                    .opacity(ring > 0.1 && ring < 1 ? 1 : 0)
 
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(color)
-                    .frame(height: 108)
+                    .frame(height: 110)
                     .frame(maxWidth: 320)
                     .overlay {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                            .fill(LinearGradient(
+                                colors: [Color.white.opacity(0.24), .clear, Color.black.opacity(0.10)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ))
                     }
-                    .scaleEffect(breathe)
-                    .shadow(color: color.opacity(rolling ? 0.34 : 0.16),
-                            radius: rolling ? 10 : 5, y: 2)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.26), lineWidth: 0.6)
+                    }
+                    .scaleEffect(hovering && !rolling ? 1.025 : breathe)
+                    .rotation3DEffect(
+                        .degrees(model.motion3D && hovering && !rolling ? 6 : 0),
+                        axis: (x: 1, y: -0.6, z: 0),
+                        perspective: 0.6
+                    )
+                    .shadow(color: color.opacity(rolling ? 0.38 : 0.22),
+                            radius: rolling ? 14 : 8, y: 4)
+                    .animation(.snappy(duration: 0.20), value: hovering)
+                    .onHover { hovering = $0 }
             }
-            .frame(height: 118)
+            .frame(height: 122)
 
             SlotRoller(value: hex, distance: 16, duration: 0.09) { text in
                 Text(text)
@@ -637,7 +814,6 @@ struct ColorStage: View {
         }
         .onChange(of: rolling) { _, r in
             if r {
-                // 抽的时候色块轻轻呼吸，像还在调
                 withAnimation(.easeInOut(duration: 0.42).repeatForever(autoreverses: true)) {
                     breathe = 1.035
                 }
@@ -648,18 +824,13 @@ struct ColorStage: View {
         .onChange(of: pulse) { _, _ in
             guard !rolling else { return }
             ring = 0
-            withAnimation(.easeOut(duration: 0.55)) { ring = 1 }
+            withAnimation(.easeOut(duration: 0.60)) { ring = 1 }
         }
     }
 }
 
-// MARK: - 随机分组
+// MARK: - 3D 随机分组
 
-/// 分组洗牌：滚动时是几摞牌在桌上被来回推着分。
-///
-/// 分组和「随机数字」的差别就在这个过程上 —— 老师看的是**堆**，不是数。
-/// 所以滚动时每张卡里画的是一叠错位滑动的牌背，上面顶着正在换的名字，
-/// 落定后由外层换成真正的组员名单。
 struct GroupShuffleStage: View {
     @Environment(AppModel.self) private var model
 
@@ -677,17 +848,17 @@ struct GroupShuffleStage: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 10)],
                   alignment: .leading, spacing: 10) {
             ForEach(0..<pileCount, id: \.self) { i in
-                ShufflingPile(index: i, label: sample(i))
+                ShufflingPile(index: i, label: sample(i), motion3D: model.motion3D)
             }
         }
         .frame(maxWidth: .infinity)
     }
 }
 
-/// 一摞正在洗的牌。
 private struct ShufflingPile: View {
     let index: Int
     let label: String
+    let motion3D: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -701,7 +872,6 @@ private struct ShufflingPile: View {
                     .foregroundStyle(.secondary)
             }
 
-            // 名字从这摞牌里一张张被翻出来
             SlotRoller(value: label, distance: 15, duration: 0.09) { v in
                 Text(v)
                     .font(.system(size: 12))
@@ -710,30 +880,31 @@ private struct ShufflingPile: View {
             }
             .frame(height: 17)
 
-            // 三张牌背来回错开，就是手在桌上推牌的样子
             TimelineView(.animation(minimumInterval: 1.0 / 40)) { ctx in
                 let t = ctx.date.timeIntervalSinceReferenceDate
-                // 三张牌**压在一起**才对 —— 之前留 2pt 间隔，看着是三个蓝方块。
-                // 负间距让它们只露出边缘，加上一点点各自的角度，就是一叠牌。
                 HStack(spacing: -11) {
                     ForEach(0..<3, id: \.self) { k in
                         RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.62 - Double(k) * 0.10))
+                            .fill(Color.accentColor.opacity(0.68 - Double(k) * 0.12))
                             .overlay {
                                 RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-                                    .strokeBorder(Color.white.opacity(0.55), lineWidth: 0.8)
+                                    .strokeBorder(Color.white.opacity(0.60), lineWidth: 0.8)
                             }
-                            .frame(width: 21, height: 30)
+                            .frame(width: 22, height: 30)
                             .rotationEffect(.degrees(Double(k - 1) * 5))
-                            .offset(x: sin(t * 5.5 + Double(index) * 1.3 + Double(k) * 0.8) * 3,
-                                    y: cos(t * 4.2 + Double(k)) * 1.2)
+                            .rotation3DEffect(
+                                .degrees(motion3D ? 18 : 0),
+                                axis: (x: 1, y: 0, z: 0),
+                                perspective: 0.6
+                            )
+                            .offset(x: sin(t * 5.8 + Double(index) * 1.3 + Double(k) * 0.8) * 3.5,
+                                    y: cos(t * 4.2 + Double(k)) * 1.5)
                     }
                 }
                 .frame(height: 34, alignment: .leading)
             }
         }
         .padding(10)
-        // 和落定后的组卡差不多高：不然洗牌一结束，卡片会整块往下掉一截
         .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
         .background {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -744,12 +915,8 @@ private struct ShufflingPile: View {
 
 // MARK: - 随机顺序
 
-/// 顺序舞台：滚动时前三位一起往上滚，落定后定格在「第 1 位」。
-///
-/// 只滚一个名字看不出这是「排队」；滚三个，老师就知道是在排顺序。
 struct SequenceStage: View {
     @Environment(AppModel.self) private var model
-    /// 滚动时露几位
     var preview: Int = 3
 
     private var scale: CGFloat { model.effectiveStageScale }
@@ -768,10 +935,6 @@ struct SequenceStage: View {
                 .contentTransition(.opacity)
 
             if model.sequenceRolling {
-                // 洗牌中：前三位并排滚。
-                //
-                // 名字必须装进**定宽**框再居中 —— 否则每行宽度随名字长短变化，
-                // VStack 的居中对齐会让三行名字的起点各偏一点，看着像没对齐。
                 VStack(spacing: 4) {
                     ForEach(0..<min(preview, max(1, model.sequenceResult.count)), id: \.self) { i in
                         HStack(spacing: 8) {
@@ -783,7 +946,7 @@ struct SequenceStage: View {
                                 Text(v)
                                     .font(.system(size: i == 0 ? 28 : 17,
                                                   weight: i == 0 ? .bold : .regular))
-                                    .foregroundStyle(i == 0 ? Color.accentColor : Color.primary)
+                                    .foregroundStyle(i == 0 ? model.resolvedStageAccent : Color.primary)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.7)
                                     .frame(width: 168, alignment: .leading)
@@ -795,7 +958,7 @@ struct SequenceStage: View {
             } else {
                 Text(name(at: 0))
                     .font(.system(size: 46 * scale, weight: .bold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(model.resolvedStageAccent)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                     .resultPop(model.celebration)
@@ -806,13 +969,11 @@ struct SequenceStage: View {
     }
 }
 
-// MARK: - 是或否
+// MARK: - 3D 是或否
 
-/// 是或否：滚动时整块字左右摇摆，像下不了决心；落定才归正。
-///
-/// 这个工具本来没有实物可演，最容易和「随机数字」撞脸。
-/// 摇摆是「犹豫」的肢体语言，一摇摆就分得开了。
+/// 是或否：滚动时沿 Y/Z 轴做 3D 跷跷板摇摆，落定弹性归正。
 struct YesNoStage: View {
+    @Environment(AppModel.self) private var model
     let text: String
     let positive: Bool
     let rolling: Bool
@@ -821,57 +982,51 @@ struct YesNoStage: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 45, paused: !rolling)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
-            // 摆幅随拍子微微变化，规矩的正弦看着像机器
             let wobble = rolling
                 ? sin(t * 8.4) * 7.5 + sin(t * 3.7) * 2
                 : 0
+            let yaw = rolling && model.motion3D ? sin(t * 6.2) * 24 : 0
 
-            RollingNumber(text: text, size: size,
+            RollingNumber(text: text,
+                          size: text.count > 1 ? size * 0.62 : size,
                           tint: positive ? Color.green : Color.red)
                 .rotationEffect(.degrees(wobble))
+                .rotation3DEffect(.degrees(yaw), axis: (x: 0, y: 1, z: 0), perspective: 0.55)
                 .offset(x: rolling ? sin(t * 5.1) * 10 : 0)
         }
-        .animation(.easeOut(duration: 0.18), value: rolling)
+        .animation(.spring(response: 0.28, dampingFraction: 0.65), value: rolling)
     }
 }
 
 // MARK: - 点名扫描
 
-/// 点名时扫过舞台的一条光带。
-///
-/// 点名和「随机数字」最容易撞车 —— 都是滚数字。区别在这条扫描线：
-/// 它像老师的手指在花名册上一行行划过去，落定就停住收掉。
 struct SpotlightSweep: View {
+    @Environment(AppModel.self) private var model
     let active: Bool
     @Environment(\.colorScheme) private var scheme
 
-    /// 深色底上必须更亮才看得见；浅色底上反而要收着，不然像划痕。
-    private var lineOpacity: Double { scheme == .dark ? 0.46 : 0.22 }
-    private var glowOpacity: Double { scheme == .dark ? 0.30 : 0.13 }
+    private var lineOpacity: Double { scheme == .dark ? 0.48 : 0.24 }
+    private var glowOpacity: Double { scheme == .dark ? 0.32 : 0.14 }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 45, paused: !active)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
-            // 0…1 来回扫，不用取模，免得接缝处跳一下
             let sweep = (sin(t * 2.6) + 1) / 2
             GeometryReader { geo in
                 let w = geo.size.width
                 let x = w * sweep
-                // 不用整条渐变色带 —— 之前 36% 宽的一条铺上去，
-                // 看着像卡片右半边被染了色，不像在「扫」。
-                // 现在只在线的两侧放一小团柔光，加一条 1.5pt 的线。
                 ZStack(alignment: .leading) {
                     Ellipse()
                         .fill(
                             RadialGradient(
-                                colors: [Color.accentColor.opacity(glowOpacity), .clear],
-                                center: .center, startRadius: 0, endRadius: 46)
+                                colors: [model.resolvedStageAccent.opacity(glowOpacity), .clear],
+                                center: .center, startRadius: 0, endRadius: 48)
                         )
-                        .frame(width: 150, height: geo.size.height * 0.92)
-                        .offset(x: x - 75)
+                        .frame(width: 156, height: geo.size.height * 0.92)
+                        .offset(x: x - 78)
 
                     Rectangle()
-                        .fill(Color.accentColor.opacity(lineOpacity))
+                        .fill(model.resolvedStageAccent.opacity(lineOpacity))
                         .frame(width: 1.5)
                         .offset(x: x)
                 }

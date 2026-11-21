@@ -646,7 +646,7 @@ struct WelcomeView: View {
     // MARK: 顶部就绪舞台
 
     private var heroStage: some View {
-        StageCard(minHeight: 136, ambientTint: .accentColor) {
+        StageCard(minHeight: 136, ambientTint: model.resolvedStageAccent) {
             VStack(spacing: 10) {
                 HStack(spacing: 6) {
                     Image(systemName: "sparkles")
