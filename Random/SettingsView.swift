@@ -49,8 +49,11 @@ struct SettingsView: View {
 
                     OptionBar("舞台字号", hint: "投影大屏时只放大结果本身，不挤压操作区") {
                         HStack(spacing: 10) {
-                            Slider(value: model.binding(\.stageScale), in: 0.8...1.6)
-                                .frame(width: 140)
+                            Slider(value: model.binding(\.stageScale), in: 0.8...1.6) { editing in
+                                model.deferPersist = editing
+                                if !editing { model.persist() }
+                            }
+                            .frame(width: 140)
                             Text("\(Int((model.effectiveStageScale * 100).rounded()))%")
                                 .font(.system(size: Type.caption).monospacedDigit())
                                 .foregroundStyle(.secondary)
@@ -95,14 +98,17 @@ struct SettingsView: View {
                         NumberField(value: model.binding(\.pickCount), suffix: "人", range: 1...10)
                     }
 
-                    OptionBar("抽取节奏", hint: "各随机工具的转盘滚动时长基线") {
+                    OptionBar("抽取节奏", hint: "各随机工具的转盘滚动时长倍率（点名标准 2.0 秒）") {
                         HStack(spacing: 10) {
-                            Slider(value: model.binding(\.pickSpeed), in: 0.5...1.8)
-                                .frame(width: 140)
-                            Text(String(format: "%.1f 秒", 0.95 * model.effectivePickSpeed))
+                            Slider(value: model.binding(\.pickSpeed), in: 0.5...1.8) { editing in
+                                model.deferPersist = editing
+                                if !editing { model.persist() }
+                            }
+                            .frame(width: 140)
+                            Text(String(format: "%.1f× · %.1f 秒", model.effectivePickSpeed, 2.0 * model.effectivePickSpeed))
                                 .font(.system(size: Type.caption).monospacedDigit())
                                 .foregroundStyle(.secondary)
-                                .frame(width: 48, alignment: .trailing)
+                                .frame(width: 82, alignment: .trailing)
                             Button("标准") { model.pickSpeed = 1.0 }
                                 .controlSize(.small)
                                 .disabled(abs(model.pickSpeed - 1.0) < 0.01)
@@ -124,8 +130,11 @@ struct SettingsView: View {
                             Image(systemName: "speaker.fill")
                                 .font(.system(size: Type.caption))
                                 .foregroundStyle(.secondary)
-                            Slider(value: model.binding(\.soundVolume), in: 0...1)
-                                .frame(width: 140)
+                            Slider(value: model.binding(\.soundVolume), in: 0...1) { editing in
+                                model.deferPersist = editing
+                                if !editing { model.persist() }
+                            }
+                            .frame(width: 140)
                             Text("\(Int((model.soundVolume * 100).rounded()))%")
                                 .font(.system(size: Type.caption).monospacedDigit())
                                 .foregroundStyle(.secondary)

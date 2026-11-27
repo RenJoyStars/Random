@@ -54,7 +54,7 @@ struct HistoryView: View {
                                 symbol: copied ? "checkmark" : "doc.on.doc",
                                 tint: copied ? .green : .accentColor,
                                 disabled: entries.isEmpty) {
-                        Pasteboard.copy(model.historyCSV(kind: filter, classID: classFilter))
+                        Pasteboard.copy(HistoryCSV.make(entries) { model.title(of: $0) })
                         copied = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
                     }
@@ -291,7 +291,7 @@ struct HistoryView: View {
         panel.message = "导出历史记录（CSV）"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try model.historyCSV(kind: filter, classID: classFilter).write(to: url, atomically: true, encoding: .utf8)
+            try HistoryCSV.make(entries) { model.title(of: $0) }.write(to: url, atomically: true, encoding: .utf8)
         } catch {
             let alert = NSAlert()
             alert.alertStyle = .warning

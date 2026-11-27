@@ -184,3 +184,46 @@ struct WindowWidthReporter: NSViewRepresentable {
         }
     }
 }
+
+/// 教室翻页笔 / 无线演示器支持：在非文本编辑状态下监听 Space / PageDown 单键触发当前页主动作。
+struct PresenterKeyMonitor: NSViewRepresentable {
+    var onTrigger: () -> Bool
+
+    func makeNSView(context: Context) -> NSView {
+        let view = PassthroughView(frame: .zero)
+        context.coordinator.install(onTrigger: onTrigger)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onTrigger = onTrigger
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var onTrigger: (() -> Bool)?
+        private var monitor: Any?
+
+        func install(onTrigger: @escaping () -> Bool) {
+            self.onTrigger = onTrigger
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, let onTrigger = self.onTrigger else { return event }
+                // 忽略带修饰键的组合快捷键
+                let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                guard mods.isEmpty else { return event }
+                // 49 = Space, 121 = PageDown（常见翻页笔下一页键）
+                guard event.keyCode == 49 || event.keyCode == 121 else { return event }
+                // 正在输入框编辑或弹窗打开时不拦截
+                guard let win = NSApp.keyWindow, win.sheets.isEmpty else { return event }
+                if win.firstResponder is NSTextView { return event }
+                return onTrigger() ? nil : event
+            }
+        }
+
+        deinit {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+        }
+    }
+}

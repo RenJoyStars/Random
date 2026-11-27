@@ -229,10 +229,16 @@ m.drawnByClass["2601"] = []
 m.pickCount = 1
 
 print("\n[13] 点名播报文案「有请」")
+m.showStudentNumber = false
+check(m.announcement(for: [1]) == "有请 2601-1 同学",
+      "隐藏学号单人：\(m.announcement(for: [1]))")
+check(m.announcement(for: [1, 3]) == "有请 2601-1、2601-3 同学",
+      "隐藏学号多人：\(m.announcement(for: [1, 3]))")
+m.showStudentNumber = true
 check(m.announcement(for: [1]) == "有请 2601-1 同学（01 号）",
-      "单人：\(m.announcement(for: [1]))")
+      "显示学号单人：\(m.announcement(for: [1]))")
 check(m.announcement(for: [1, 3]) == "有请 2601-1、2601-3 同学（01、03 号）",
-      "多人：\(m.announcement(for: [1, 3]))")
+      "显示学号多人：\(m.announcement(for: [1, 3]))")
 m.padZero = false
 check(m.announcement(for: [7]) == "有请 2601-7 同学（7 号）",
       "关补零后：\(m.announcement(for: [7]))")
@@ -242,6 +248,7 @@ check(m.announcement(for: [1]).hasPrefix("有请"), "一律以「有请」开头
 m.rosterOverrides["2601"] = ["甲", "乙"]
 check(m.announcement(for: [1, 2]) == "有请 甲、乙 同学（01、02 号）",
       "自定义名单同样生效：\(m.announcement(for: [1, 2]))")
+m.showStudentNumber = false
 m.rosterOverrides = [:]
 m.selection = .classroom("2601")
 check(m.pickMessage.contains("点名") && !m.pickMessage.contains("　"),

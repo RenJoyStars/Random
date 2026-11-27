@@ -211,8 +211,10 @@ struct RandomNumberView: View {
                 CardGroup {
                     Bar {
                         HStack(alignment: .bottom, spacing: 18) {
-                            CountField(label: "最小值", value: model.binding(\.numMin))
-                            CountField(label: "最大值", value: model.binding(\.numMax))
+                            NumberField(label: "最小值", value: model.binding(\.numMin),
+                                        range: -9999...9999, width: 76)
+                            NumberField(label: "最大值", value: model.binding(\.numMax),
+                                        range: -9999...9999, width: 76)
                             Spacer(minLength: 8)
                             NumberField(label: "抽取个数", value: model.binding(\.numCount),
                                         suffix: "个", range: 1...20)
@@ -943,9 +945,12 @@ struct GroupPickView: View {
     }
 
     private var actionButtonTitle: String {
-        if model.groupPickMode == 0 {
+        switch model.groupPickMode {
+        case 0:
             return model.groupPickCount > 1 ? "抽 \(model.groupPickCount) 组" : "抽一组"
-        } else {
+        case 3:
+            return model.groupPickCount > 1 ? "抽 \(model.groupPickCount) 项" : "抽一项"
+        default:
             return model.groupPickCount > 1 ? "抽 \(model.groupPickCount) 个声部" : "抽声部"
         }
     }
@@ -1052,6 +1057,7 @@ struct GroupPickView: View {
         switch model.groupPickMode {
         case 1: return "四部合唱：女高音 / 女低音 / 男高音 / 男低音"
         case 2: return "二部合唱：高声部 / 低声部"
+        case 3: return "共 \(model.availableGroupOptions.count) 个自定义项 · 每次抽 \(min(model.groupPickCount, model.availableGroupOptions.count)) 项"
         default: return "共 \(model.groupPickTotal) 个小组 · 每次抽 \(model.groupPickCount) 组"
         }
     }

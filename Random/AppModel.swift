@@ -606,7 +606,7 @@ final class AppModel {
     /// 投影到教室大屏时，老师要的是后排也看得清那个学号 / 姓名；
     /// 整窗缩放会把侧边栏和按钮一起放大，屏幕上反而更挤。所以只缩放结果。
     var stageScale: Double = 1.0 {
-        didSet { persist() }
+        didSet { deferPersist ? schedulePersist() : persist() }
     }
 
     /// 夹到合法区间（滑条以外的入口，比如将来的快捷键，也不会越界）
@@ -760,7 +760,7 @@ final class AppModel {
     /// 只在这一处乘：8 种工具的抽取都走 `finishAfter`，
     /// 乘一次就全都跟着变 —— 不用每个工具各配一个滑块。
     var pickSpeed: Double = 1.0 {
-        didSet { persist() }
+        didSet { deferPersist ? schedulePersist() : persist() }
     }
 
     /// 实际生效的倍率。0.5 倍时约半秒，再快就只剩"闪一下"，学生看不清；
@@ -771,7 +771,7 @@ final class AppModel {
     var soundVolume: Double = 0.8 {
         didSet {
             Sound.volume = Float(min(max(soundVolume, 0), 1))
-            persist()
+            deferPersist ? schedulePersist() : persist()
         }
     }
 
@@ -819,13 +819,16 @@ final class AppModel {
         return all.filter { !used.contains($0) }
     }
 
-    /// 点名完成后的播报：「有请 张三 同学（07 号）」
+    /// 点名完成后的播报：显示学号时「有请 张三 同学（07 号）」，隐藏学号时只报姓名
     func announcement(for numbers: [Int]) -> String {
         guard !numbers.isEmpty else { return "" }
         let nos = numbers.map { fmtNo($0) }.joined(separator: "、")
         let names = numbers.compactMap { name(no: $0) }
         if names.count == numbers.count {
-            return "有请 \(names.joined(separator: "、")) 同学（\(nos) 号）"
+            if showStudentNumber {
+                return "有请 \(names.joined(separator: "、")) 同学（\(nos) 号）"
+            }
+            return "有请 \(names.joined(separator: "、")) 同学"
         }
         return "有请 \(nos) 号同学"
     }
@@ -1023,17 +1026,22 @@ final class AppModel {
             return
         }
 
+        let targetClassID = classID
         groupingRolling = true
         finishAfter(1.15, tick: 0.10, tickEnd: 0.05, sound: .shuffle, roll: {
             // 滚动过程也真的在分组，停下来之前看到的是「正在重新洗牌」
             self.groups = self.nextGroups()
         }, settle: {
+            guard self.classID == targetClassID else {
+                self.groupingRolling = false
+                return
+            }
             Sound.shared.victory()
             self.groupingRolling = false
             self.groups = final
             self.cheer()
             self.logHistory(kind: HistoryKind.group,
-                            classID: self.classID,
+                            classID: targetClassID,
                             text: "\(final.count) 组（\(GroupSplit.sizeSummary(final)) 人）")
         })
     }
@@ -1280,6 +1288,8 @@ final class AppModel {
     @ObservationIgnored private let storageKey = "cn.renqiaoyi.random.state.v3"
     /// 启动加载中：这段时间禁止 persist（否则会用默认值覆盖磁盘上的记录）
     @ObservationIgnored private var isLoading = false
+    /// 连续拖动滑块期间为 true：走 0.25s 防抖落盘，松手后立即落盘。
+    @ObservationIgnored var deferPersist = false
 
     /// 名单落盘位置的可注入覆盖。
     ///
@@ -1969,7 +1979,7 @@ final class AppModel {
             if final { self.yesCount += 1 } else { self.noCount += 1 }
             self.cheer()
             self.persist()
-            self.logHistory(kind: Tool.yesNo.rawValue, text: final ? "是" : "否")
+            self.logHistory(kind: Tool.yesNo.rawValue, text: final ? self.yesLabel : self.noLabel)
         })
     }
 

@@ -59,6 +59,18 @@ struct RootView: View {
             guard columnVisibility != .detailOnly else { return }
             withAnimation(.snappy(duration: 0.2)) { columnVisibility = .detailOnly }
         })
+        // 教室翻页笔支持：焦点不在输入框时，按 Space / PageDown 直接触发当前页点名或抽取
+        .background(PresenterKeyMonitor {
+            switch model.selection {
+            case .classroom, .tool(.grouping), .tool(.sequence), .tool(.groupPick),
+                 .tool(.countdown), .tool(.randomNumber), .tool(.dice), .tool(.coin),
+                 .tool(.card), .tool(.color), .tool(.letter), .tool(.yesNo):
+                model.performPrimaryAction()
+                return true
+            default:
+                return false
+            }
+        })
         .onAppear {
             // 冷启动默认进入选班大厅，所有年级默认保持收起状态
             if case .classroom = model.selection { focusGrade(force: true) }

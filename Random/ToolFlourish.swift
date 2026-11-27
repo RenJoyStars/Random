@@ -19,6 +19,7 @@ import SwiftUI
 /// 一段文字沿 3D 滚筒向上翻出、下一段从下方翻入。
 struct SlotRoller<Content: View>: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let value: String
     /// 一次切换滚过的距离（≈ 字号的一半最自然）
     var distance: CGFloat = 28
@@ -29,6 +30,8 @@ struct SlotRoller<Content: View>: View {
     @State private var previous: String?
     @State private var progress: Double = 1
 
+    private var use3D: Bool { model.motion3D && !reduceMotion }
+
     var body: some View {
         ZStack {
             if let previous {
@@ -36,7 +39,7 @@ struct SlotRoller<Content: View>: View {
                     .offset(y: -distance * progress)
                     .opacity(1 - progress)
                     .rotation3DEffect(
-                        .degrees(model.motion3D ? -34 * progress : 0),
+                        .degrees(use3D ? -34 * progress : 0),
                         axis: (x: 1, y: 0, z: 0),
                         perspective: 0.55
                     )
@@ -45,7 +48,7 @@ struct SlotRoller<Content: View>: View {
                 .offset(y: distance * (1 - progress))
                 .opacity(progress)
                 .rotation3DEffect(
-                    .degrees(model.motion3D ? 34 * (1 - progress) : 0),
+                    .degrees(use3D ? 34 * (1 - progress) : 0),
                     axis: (x: 1, y: 0, z: 0),
                     perspective: 0.55
                 )
@@ -67,6 +70,8 @@ struct SlotRoller<Content: View>: View {
 /// 与微倾角透视，既呈现真实 3D 金属质感，又绝不会出现文字镜像反写。
 struct CoinStage: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var use3D: Bool { model.motion3D && !reduceMotion }
 
     @State private var spinSquash: CGFloat = 1
     @State private var landSquash: CGFloat = 1
@@ -129,7 +134,7 @@ struct CoinStage: View {
                 coinBody
                     .rotationEffect(.degrees(wobble))
                     .rotation3DEffect(
-                        .degrees(model.motion3D ? tiltX : 0),
+                        .degrees(use3D ? tiltX : 0),
                         axis: (x: 1, y: 0.18, z: 0),
                         perspective: 0.55
                     )
@@ -282,12 +287,14 @@ struct CoinStage: View {
 /// 会滚、会砸、带三轴 3D 翻滚与桌面投影的骰子组。
 struct DiceStage: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let values: [Int]
     let faces: Int
     let rolling: Bool
 
     @State private var thump: CGFloat = 1
     @State private var settleTilt: Double = 0
+    private var use3D: Bool { model.motion3D && !reduceMotion }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 50, paused: !rolling)) { ctx in
@@ -296,8 +303,8 @@ struct DiceStage: View {
                 ForEach(Array(values.enumerated()), id: \.offset) { i, v in
                     let phase = Double(i) * 1.9
                     let bounceY = rolling ? abs(sin(t * 14 + phase)) * -16 : 0
-                    let rx = rolling && model.motion3D ? sin(t * 16 + phase) * 38 : settleTilt
-                    let ry = rolling && model.motion3D ? cos(t * 19 + phase * 1.3) * 42 : 0
+                    let rx = rolling && use3D ? sin(t * 16 + phase) * 38 : settleTilt
+                    let ry = rolling && use3D ? cos(t * 19 + phase * 1.3) * 42 : 0
                     let rz = rolling ? sin(t * 13 + phase) * 14 : 0
 
                     VStack(spacing: 6) {
@@ -411,11 +418,13 @@ struct CardBack: View {
 /// 3D 抽卡舞台：洗牌时扇形牌背错落起伏，落定时逐张真 3D Y 轴无镜像翻转揭晓。
 struct CardStage: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let cards: [PlayingCard]
     let count: Int
     let rolling: Bool
     var round: Int = 0
     var width: CGFloat = 90
+    private var use3D: Bool { model.motion3D && !reduceMotion }
 
     private var shownWidth: CGFloat {
         let n = rolling ? count : cards.count
@@ -438,7 +447,7 @@ struct CardStage: View {
                             CardBack(width: shownWidth, style: model.cardBackStyle)
                                 .rotationEffect(.degrees(delta * (n > 3 ? 3.2 : 2.0) + wave * 2.5))
                                 .rotation3DEffect(
-                                    .degrees(model.motion3D ? delta * 6 + wave * 10 : 0),
+                                    .degrees(use3D ? delta * 6 + wave * 10 : 0),
                                     axis: (x: 0.15, y: 1, z: 0),
                                     perspective: 0.55
                                 )
@@ -458,7 +467,7 @@ struct CardStage: View {
                         FlippingCard(card: card,
                                      width: shownWidth,
                                      backStyle: model.cardBackStyle,
-                                     motion3D: model.motion3D,
+                                     motion3D: use3D,
                                      fanAngle: n > 1 ? delta * (n > 4 ? 2.2 : 3.0) : 0,
                                      delay: Double(i) * 0.07)
                             .offset(y: CGFloat(abs(delta) * 2.0))
@@ -974,6 +983,7 @@ struct SequenceStage: View {
 /// 是或否：滚动时沿 Y/Z 轴做 3D 跷跷板摇摆，落定弹性归正。
 struct YesNoStage: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let text: String
     let positive: Bool
     let rolling: Bool
@@ -985,7 +995,7 @@ struct YesNoStage: View {
             let wobble = rolling
                 ? sin(t * 8.4) * 7.5 + sin(t * 3.7) * 2
                 : 0
-            let yaw = rolling && model.motion3D ? sin(t * 6.2) * 24 : 0
+            let yaw = rolling && model.motion3D && !reduceMotion ? sin(t * 6.2) * 24 : 0
 
             RollingNumber(text: text,
                           size: text.count > 1 ? size * 0.62 : size,

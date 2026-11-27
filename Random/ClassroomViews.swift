@@ -138,38 +138,46 @@ struct ClassroomView: View {
                 }
                 .animation(.snappy(duration: 0.18), value: model.canUndo && !model.pickRolling)
 
-                SectionLabel("设置")
-
-                // 设置卡片（组内用细线分隔）。
+                // 紧凑快捷设置条（完整参数亦可在 ⌘, 设置页调整，节省纵向空间让点名统计一屏可见）
                 CardGroup {
-                    OptionBar("每次点几名", hint: "可同时抽多人") {
-                        NumberField(value: model.binding(\.pickCount), suffix: "人",
-                                    range: 1...10)
-                    }
+                    Bar {
+                        HStack(spacing: 14) {
+                            HStack(spacing: 6) {
+                                Text("每次")
+                                    .font(.system(size: Type.body, weight: .medium))
+                                NumberField(value: model.binding(\.pickCount), suffix: "人",
+                                            range: 1...10, width: 44)
+                            }
 
-                    OptionBar("公平点名", hint: "被点次数较少的同学优先被抽到") {
-                        Toggle("", isOn: model.binding(\.fairPick))
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                    }
+                            Divider().frame(height: 18)
 
-                    OptionBar("不重复", hint: "点过的本轮不再点") {
-                        Toggle("", isOn: model.binding(\.noRepeat))
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                    }
-
-                    OptionBar("显示学号", hint: "关掉后只突出展示姓名，避免插班生断号") {
-                        Toggle("", isOn: model.binding(\.showStudentNumber))
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                    }
-
-                    if model.showStudentNumber {
-                        OptionBar("补零显示", hint: "7 号显示为 07") {
-                            Toggle("", isOn: model.binding(\.padZero))
+                            Toggle("公平点名", isOn: model.binding(\.fairPick))
                                 .toggleStyle(.switch)
-                                .labelsHidden()
+                                .controlSize(.small)
+                                .font(.system(size: Type.body))
+                                .help("被点次数较少的同学优先被抽到")
+
+                            Toggle("不重复", isOn: model.binding(\.noRepeat))
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
+                                .font(.system(size: Type.body))
+                                .help("点过的本轮不再点")
+
+                            Spacer(minLength: 4)
+
+                            Toggle("学号", isOn: model.binding(\.showStudentNumber))
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
+                                .font(.system(size: Type.body))
+                                .help("关掉后只突出展示姓名，避免插班生断号")
+
+                            if model.showStudentNumber {
+                                Toggle("补零", isOn: model.binding(\.padZero))
+                                    .toggleStyle(.switch)
+                                    .controlSize(.small)
+                                    .font(.system(size: Type.body))
+                                    .help("7 号显示为 07")
+                            }
                         }
                     }
                 }
@@ -190,9 +198,11 @@ struct ClassroomView: View {
                                      tint: model.pickRemaining == 0 ? .red : .accentColor,
                                      symbol: model.pickRemaining == 0 ? "exclamationmark" : "arrow.forward")
                             Spacer(minLength: 0)
-                            ClearButton(title: "放回全部", symbol: "arrow.uturn.backward",
-                                        disabled: model.drawn.isEmpty) {
-                                withAnimation(.snappy(duration: 0.2)) { model.resetPick() }
+                            if model.classCount > 0 {
+                                Text("共 \(model.classCount) 人")
+                                    .font(.system(size: Type.caption))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
                             }
                         }
 

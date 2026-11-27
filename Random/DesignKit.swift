@@ -737,6 +737,7 @@ struct CelebrationParticle {
 }
 
 struct ConfettiBurst: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var trigger: Int
     var theme: CelebrationTheme = .confetti
     /// 粒子密度：完整 / 精简 / 关闭（见 EffectLevel）
@@ -764,7 +765,7 @@ struct ConfettiBurst: View {
 
     var body: some View {
         ZStack {
-            if alive, level != .off {
+            if alive, level != .off, !reduceMotion {
                 TimelineView(.animation) { timeline in
                     Canvas { ctx, size in
                         let t = timeline.date.timeIntervalSince(start)
@@ -780,6 +781,7 @@ struct ConfettiBurst: View {
     }
 
     private func burst() {
+        guard !reduceMotion, level != .off else { return }
         start = Date()
         let all = Self.makeParticles(theme)
         // 精简档直接按比例抽样，不再另写一套参数 —— 观感一致，只是少一半。
@@ -1612,7 +1614,7 @@ struct ConfettiFrame: View {
 extension View {
     /// 在卡片上盖一层落定特效（`trigger` 变化时放一次），并裁进圆角里。
     func celebrationOverlay(_ trigger: Int,
-                            radius: CGFloat = 24,
+                            radius: CGFloat = LayoutMetrics.stageCornerRadius,
                             theme: CelebrationTheme = .confetti,
                             level: EffectLevel = .full) -> some View {
         overlay {
